@@ -1,88 +1,68 @@
 import os
-import random
 import time
+import random
 import requests
+from requests_oauthlib import OAuth1
 
-TOKEN_URL = 'https://api.twitter.com/2/oauth2/token'
-TWEET_URL = 'https://api.twitter.com/2/tweets'
+# Load config from environment variables
+API_KEY = os.getenv("API_KEY")
+API_SECRET = os.getenv("API_SECRET")
+ACCESS_TOKEN = os.getenv("ACCESS_TOKEN")
+ACCESS_TOKEN_SECRET = os.getenv("ACCESS_TOKEN_SECRET")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+POST_EVERY_HOURS = int(os.getenv("POST_EVERY_HOURS", 1))
 
-TEST_SENTENCES = [
-    "🚀 WenLambo Launchpad is live! Build, launch & trade instantly.",
-    "⚡ Multi-chain support (BSC, Base, Arbitrum) — your token, your rules.",
-    "🔥 Create tokens for free, trade instantly on our launchpad.",
-    "💎 Next-gen launchpad powered by speed and simplicity. WenLambo!",
-    "📈 Build, launch, and moon — all in one place. #WenLambo"
+TWEET_URL = "https://api.twitter.com/2/tweets"
+GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
+
+# Example prompts for Gemini
+PROMPTS = [
+    "Write a short tweet about the benefits of launching a token on our multi-chain launchpad.",
+    "Create a fun tweet announcing that users can now trade instantly after creating tokens.",
+    "Write a tweet highlighting that our launchpad supports BSC, Base, and Arbitrum.",
 ]
 
-
-def ensure_token(tokens: dict) -> dict:
-    """Refresh access token if expired"""
-    now = int(time.time())
-    if tokens.get("access_token") and tokens.get("expires_at", 0) > now:
-        return tokens
-
-    print("Refreshing access token...")
-
-    data = {
-        "grant_type": "refresh_token",
-        "refresh_token": os.getenv("TWITTER_REFRESH_TOKEN"),
-        "client_id": os.getenv("TWITTER_CLIENT_ID"),
+def generate_tweet():
+    prompt = random.choice(PROMPTS)
+    headers = {"Content-Type": "application/json"}
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}]
     }
-    headers = {"Content-Type": "application/x-www-form-urlencoded"}
+    try:
+        r = requests.post(
+            f"{GEMINI_URL}?key={GEMINI_API_KEY}",
+            headers=headers,
+            json=payload,
+            timeout=30
+        )
+        r.raise_for_status()
+        data = r.json()
+        return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+    except Exception as e:
+        print("Gemini generation failed:", e)
+        return random.choice(PROMPTS)  # fallback
 
-    r = requests.post(TOKEN_URL, data=data, headers=headers, timeout=30)
-    if r.status_code != 200:
-        raise RuntimeError(f"Failed to refresh token: {r.status_code} {r.text}")
-
-    new_tok = r.json()
-    expires_in = new_tok.get("expires_in", 0)
-    new_tok["expires_at"] = int(time.time()) + int(expires_in) - 60
-
-    # Save refresh token back if API doesn’t return a new one
-    if "refresh_token" not in new_tok:
-        new_tok["refresh_token"] = os.getenv("TWITTER_REFRESH_TOKEN")
-
-    print("Token refreshed.")
-    return new_tok
-
-
-def post_tweet(access_token: str, text: str):
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "Content-Type": "application/json",
-    }
+def post_tweet(text):
+    auth = OAuth1(API_KEY, API_SECRET, ACCESS_TOKEN, ACCESS_TOKEN_SECRET)
     payload = {"text": text}
-
-    r = requests.post(TWEET_URL, headers=headers, json=payload, timeout=30)
+    r = requests.post(TWEET_URL, auth=auth, json=payload, timeout=30)
     if r.status_code not in (200, 201):
         raise RuntimeError(f"Failed to post tweet: {r.status_code} {r.text}")
     return r.json()
 
-
 def main():
-    interval_hours = int(os.getenv("POST_EVERY_HOURS", 1))
-    interval_seconds = max(60, interval_hours * 3600)
-
-    # Load tokens from ENV
-    tokens = {
-        "access_token": os.getenv("TWITTER_ACCESS_TOKEN"),
-        "refresh_token": os.getenv("TWITTER_REFRESH_TOKEN"),
-        "expires_at": 0,  # force refresh on start
-    }
-
+    interval_seconds = max(60, POST_EVERY_HOURS * 3600)
     while True:
         try:
-            tokens = ensure_token(tokens)
-            text = random.choice(TEST_SENTENCES)
-            print(f"Posting tweet: {text}")
-            resp = post_tweet(tokens["access_token"], text)
+            text = generate_tweet()
+            print("Posting tweet:", text)
+            resp = post_tweet(text)
             print("Tweet posted:", resp)
         except Exception as e:
             print("Error during posting:", e)
-
         print(f"Sleeping for {interval_seconds} seconds...")
         time.sleep(interval_seconds)
-
 
 if __name__ == "__main__":
     main()
