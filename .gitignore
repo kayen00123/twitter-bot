@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Local config and secrets
+config.json
+.tokens*
+tokens.json
+.env
+.env.*.local
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/

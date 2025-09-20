@@ -1,0 +1,13 @@
+{
+  "name": "twitter-bot",
+  "version": "1.0.0",
+  "description": "Simple Twitter bot using OAuth 2.0 PKCE that tweets hourly.",
+  "main": "bot.js",
+  "scripts": {
+    "auth": "node auth.js",
+    "start": "node bot.js"
+  },
+  "dependencies": {
+    "node-fetch": "^2.6.9"
+  }
+}
