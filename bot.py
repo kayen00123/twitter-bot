@@ -23,8 +23,8 @@ TWEET_URL = "https://api.twitter.com/2/tweets"
 USER_LOOKUP_URL = "https://api.twitter.com/2/users/by/username/{}"
 USER_TWEETS_URL = "https://api.twitter.com/2/users/{}/tweets"
 
-# Accounts to reply to
-REPLY_ACCOUNTS = ["BNBCHAIN", "cz_binance", "binance", "CoinMarketCap"]
+# Only reply to Binance account
+REPLY_ACCOUNTS = ["BNBCHAIN"]
 
 # Example prompts for Gemini-generated tweets
 PROMPTS = [
@@ -48,7 +48,6 @@ def get_user_id(username):
 
 def get_recent_tweets(user_id, max_results=MAX_TWEETS_TO_CHECK):
     auth = OAuth1(API_KEY, API_SECRET, ACCESS_TOKEN, ACCESS_TOKEN_SECRET)
-    # Twitter requires max_results between 5 and 100
     max_results = max(5, min(max_results, 100))
     params = {"max_results": max_results, "exclude": "retweets,replies"}
     r = requests.get(USER_TWEETS_URL.format(user_id), auth=auth, params=params, timeout=30)
@@ -84,7 +83,7 @@ def reply_to_account(username):
     try:
         uid = get_user_id(username)
         tweets = get_recent_tweets(uid)
-        # Limit to 2 replies per account per day
+        # Limit to 2 replies per account
         for tweet in tweets[:2]:
             prompt = f"Write a reply to this tweet to relate it to our multi-chain launchpad:\n{tweet['text']}"
             reply_text = generate_gemini_text(prompt)
@@ -97,11 +96,16 @@ def reply_to_account(username):
                 print(f"Replied to {username}: {reply_text}")
             time.sleep(5)  # small delay between replies
     except requests.exceptions.HTTPError as e:
-        print(f"Failed to fetch tweets for user {uid}: {e}")
+        print(f"Failed to fetch tweets for user {username}: {e}")
     except Exception as e:
         print(f"Error replying to {username}: {e}")
 
 def main():
+    # Random startup delay to avoid spamming multiple replies at once
+    startup_delay = random.randint(5, 60)
+    print(f"Startup delay: {startup_delay} seconds")
+    time.sleep(startup_delay)
+
     interval_seconds = max(60, POST_EVERY_HOURS * 3600)
     while True:
         # Post a standalone tweet
@@ -113,7 +117,7 @@ def main():
         except Exception as e:
             print("Error posting main tweet:", e)
 
-        # Reply to tracked accounts
+        # Reply only to Binance
         for acct in REPLY_ACCOUNTS:
             reply_to_account(acct)
 
