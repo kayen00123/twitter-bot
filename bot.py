@@ -5,23 +5,29 @@ import base64
 import requests
 from requests_oauthlib import OAuth1
 
-# --- Environment variables (set these in Railway) ---
+# Load config from environment variables
 API_KEY = os.getenv("API_KEY")
 API_SECRET = os.getenv("API_SECRET")
 ACCESS_TOKEN = os.getenv("ACCESS_TOKEN")
 ACCESS_TOKEN_SECRET = os.getenv("ACCESS_TOKEN_SECRET")
-
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GEMINI_TEXT_MODEL = os.getenv("GEMINI_TEXT_MODEL", "gemini-1.5-flash")
-GEMINI_IMAGE_MODEL = os.getenv("GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image-preview")
-POST_EVERY_HOURS = int(os.getenv("POST_EVERY_HOURS", 1))
 
-# --- Endpoints ---
+# Text model for tweet generation
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
+
+# Image model for image generation
+GEMINI_IMAGE_MODEL = os.getenv("GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image-preview")
+GEMINI_IMAGE_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_IMAGE_MODEL}:generateContent"
+
+POST_EVERY_HOURS = int(os.getenv("POST_EVERY_HOURS", 1))
+POST_WITH_IMAGES = os.getenv("POST_WITH_IMAGES", "1").lower() in ("1", "true", "yes", "y")
+
+# Twitter endpoints
 TWEET_URL = "https://api.twitter.com/2/tweets"
 UPLOAD_URL = "https://upload.twitter.com/1.1/media/upload.json"
-GENAI_BASE = "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent"
 
-# --- Prompts ---
+# Example prompts for Gemini
 PROMPTS = [
     "Write a short tweet about the benefits of launching a token on our multi-chain launchpad.",
     "Create a fun tweet announcing that users can now trade instantly after creating tokens.",
@@ -37,149 +43,163 @@ PROMPTS = [
     "Write a motivational tweet that convinces founders their project will gain massive adoption by choosing our launchpad.",
 ]
 
-# --- Helpers ---
-def call_gemini_generate(model: str, contents):
-    """
-    Call the Generative Language API generateContent endpoint.
-    `contents` should be a list of simple strings or objects.
-    """
-    url = GENAI_BASE.format(model) + f"?key={GEMINI_API_KEY}"
+
+def _trim_to_tweet(text: str, limit: int = 280) -> str:
+    text = (text or "").strip()
+    if len(text) <= limit:
+        return text
+    # ensure we don't cut mid-word too harshly
+    trimmed = text[: limit - 1].rstrip()
+    return trimmed + "…"
+
+
+def generate_tweet() -> str:
+    """Generate tweet text using Gemini. Fallback to a random prompt if it fails."""
+    prompt = random.choice(PROMPTS)
     headers = {"Content-Type": "application/json"}
-    payload = {"contents": contents}
-    r = requests.post(url, headers=headers, json=payload, timeout=60)
-    r.raise_for_status()
-    return r.json()
-
-
-def generate_text(prompt: str) -> str:
+    payload = {"contents": [{"parts": [{"text": prompt}]}]}
     try:
-        resp = call_gemini_generate(GEMINI_TEXT_MODEL, [prompt])
-        # Attempt to read the usual text path:
-        cand = resp.get("candidates", [])
-        if cand:
-            for part in cand[0].get("content", {}).get("parts", []):
-                if part.get("text"):
-                    return part["text"].strip()
-        # fallback to casual
-        return prompt
+        r = requests.post(
+            f"{GEMINI_URL}?key={GEMINI_API_KEY}",
+            headers=headers,
+            json=payload,
+            timeout=30,
+        )
+        r.raise_for_status()
+        data = r.json()
+        text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+        return _trim_to_tweet(text)
     except Exception as e:
         print("Gemini text generation failed:", e)
-        return prompt
+        return _trim_to_tweet(prompt)  # fallback
 
 
-def _extract_image_bytes_from_part(part):
+def build_image_prompt(tweet_text: str) -> str:
+    """Create a descriptive image prompt aligned with the tweet content."""
+    base = (
+        "Create a striking, on-brand social media image that visually represents the following tweet. "
+        "Avoid heavy text; prioritize icons, abstract shapes, charts, coins, and launch/rocket motifs. "
+        "Style: clean, modern, high-contrast, crypto/tech aesthetic, soft rim lighting, volumetric glow. "
+        "Background: gradient or dark with subtle geometric patterns. Composition: square, centered focus.\n\n"
+        f"Tweet: {tweet_text}"
+    )
+    return base
+
+
+def generate_image(tweet_text: str):
+    """Generate an image from Gemini and return (mime_type, image_bytes).
+
+    Returns None on failure.
     """
-    Attempt several possible fields that Gemini REST may return for inline image data.
-    We handle a few possibilities observed in different clients/versions.
-    Returns bytes or None.
-    """
-    # Many outputs put binary in part["inlineData"] or part["inline_data"]
-    inline = part.get("inline_data") or part.get("inlineData") or {}
-    # 1) inline_data.data may already be base64 string
-    if isinstance(inline, dict):
-        data = inline.get("data") or inline.get("b64_json") or inline.get("base64")
-        if isinstance(data, str):
-            try:
-                return base64.b64decode(data)
-            except Exception:
-                pass
-    # 2) some clients return b64_json at top-level part
-    b64 = part.get("b64_json") or part.get("b64")
-    if isinstance(b64, str):
+    if not GEMINI_API_KEY:
+        print("GEMINI_API_KEY not set; skipping image generation.")
+        return None
+
+    prompt = build_image_prompt(tweet_text)
+    headers = {"Content-Type": "application/json"}
+    payload = {"contents": [{"parts": [{"text": prompt}]}]}
+
+    try:
+        r = requests.post(
+            f"{GEMINI_IMAGE_URL}?key={GEMINI_API_KEY}",
+            headers=headers,
+            json=payload,
+            timeout=60,
+        )
+        r.raise_for_status()
+        data = r.json()
+
+        # Find the first inline_data part that looks like an image
+        candidates = data.get("candidates", [])
+        for cand in candidates:
+            content = cand.get("content", {})
+            parts = content.get("parts", [])
+            for part in parts:
+                inline = part.get("inline_data")
+                if inline and isinstance(inline, dict):
+                    mime_type = inline.get("mime_type", "image/png")
+                    b64 = inline.get("data")
+                    if b64:
+                        try:
+                            return mime_type, base64.b64decode(b64)
+                        except Exception:
+                            pass
+        print("No inline_data image returned by Gemini.")
+        return None
+    except Exception as e:
+        # Print response text for easier debugging if available
         try:
-            return base64.b64decode(b64)
+            print("Gemini image generation failed:", e, "\nResponse:", r.text)
         except Exception:
-            pass
-    # 3) some libs might return bytes-like directly (unlikely via JSON) - ignore
-    return None
-
-
-def generate_image(prompt: str) -> str | None:
-    """
-    Generate image via Gemini image-capable model and save to local file.
-    Returns file path or None on failure.
-    """
-    try:
-        resp = call_gemini_generate(GEMINI_IMAGE_MODEL, [prompt])
-        cand = resp.get("candidates", [])
-        if not cand:
-            print("No candidates from Gemini image response:", resp)
-            return None
-
-        # Scan parts for inline image bytes
-        parts = cand[0].get("content", {}).get("parts", [])
-        for i, part in enumerate(parts):
-            img_bytes = _extract_image_bytes_from_part(part)
-            if img_bytes:
-                out_path = f"generated_image_{int(time.time())}.png"
-                with open(out_path, "wb") as f:
-                    f.write(img_bytes)
-                return out_path
-
-        # If nothing found:
-        print("No inline image data found in Gemini response:", resp)
-        return None
-    except Exception as e:
-        print("Gemini image generation failed:", e)
+            print("Gemini image generation failed:", e)
         return None
 
 
-def upload_media(img_path: str) -> str | None:
-    try:
-        auth = OAuth1(API_KEY, API_SECRET, ACCESS_TOKEN, ACCESS_TOKEN_SECRET)
-        with open(img_path, "rb") as f:
-            files = {"media": f}
-            r = requests.post(UPLOAD_URL, auth=auth, files=files, timeout=60)
-            r.raise_for_status()
-            return r.json().get("media_id_string")
-    except Exception as e:
-        print("Upload to Twitter failed:", e)
-        return None
+def upload_media(image_bytes: bytes, media_type: str = "image/png") -> str:
+    """Upload media to Twitter and return media_id_string."""
+    auth = OAuth1(API_KEY, API_SECRET, ACCESS_TOKEN, ACCESS_TOKEN_SECRET)
+    # Twitter v1.1 media upload accepts base64-encoded "media" field
+    media_b64 = base64.b64encode(image_bytes).decode("ascii")
+    data = {
+        "media": media_b64,
+        "media_category": "tweet_image",
+    }
+    r = requests.post(UPLOAD_URL, auth=auth, data=data, timeout=60)
+    if r.status_code not in (200, 201):
+        raise RuntimeError(f"Failed to upload media: {r.status_code} {r.text}")
+    resp = r.json()
+    return resp.get("media_id_string") or str(resp.get("media_id"))
 
 
-def post_tweet(text: str, media_id: str | None = None):
+def post_tweet(text: str):
     auth = OAuth1(API_KEY, API_SECRET, ACCESS_TOKEN, ACCESS_TOKEN_SECRET)
     payload = {"text": text}
-    if media_id:
-        payload["media"] = {"media_ids": [media_id]}
     r = requests.post(TWEET_URL, auth=auth, json=payload, timeout=30)
     if r.status_code not in (200, 201):
         raise RuntimeError(f"Failed to post tweet: {r.status_code} {r.text}")
     return r.json()
 
 
-# --- Main loop ---
+def post_tweet_with_media(text: str, media_id: str):
+    auth = OAuth1(API_KEY, API_SECRET, ACCESS_TOKEN, ACCESS_TOKEN_SECRET)
+    payload = {
+        "text": text,
+        "media": {"media_ids": [media_id]},
+    }
+    r = requests.post(TWEET_URL, auth=auth, json=payload, timeout=30)
+    if r.status_code not in (200, 201):
+        raise RuntimeError(f"Failed to post tweet with media: {r.status_code} {r.text}")
+    return r.json()
+
+
 def main():
     interval_seconds = max(60, POST_EVERY_HOURS * 3600)
-
-    # small randomized startup delay to avoid bursty posts on restarts
-    startup_delay = random.randint(10, 90)
-    print(f"Startup delay: {startup_delay}s")
-    time.sleep(startup_delay)
-
     while True:
         try:
-            prompt = random.choice(PROMPTS)
-            print("Generating tweet text...")
-            text = generate_text(prompt)
+            text = generate_tweet()
+            print("Generated tweet:", text)
 
-            # create an image prompt oriented to the text
-            image_prompt = f"Create a high-quality promotional poster for a crypto launchpad: {text} " \
-                           "Style: futuristic, clean, dark background with glowing blockchain icons, include short legible headline text."
-            print("Generating image...")
-            img_path = generate_image(image_prompt)
+            if POST_WITH_IMAGES:
+                img = generate_image(text)
+            else:
+                img = None
 
-            media_id = None
-            if img_path:
-                print("Uploading image to Twitter:", img_path)
-                media_id = upload_media(img_path)
-
-            print("Posting tweet...")
-            resp = post_tweet(text, media_id)
-            print("Tweet posted:", resp)
+            if img:
+                mime, img_bytes = img
+                try:
+                    media_id = upload_media(img_bytes, mime)
+                    print("Media uploaded, media_id:", media_id)
+                    resp = post_tweet_with_media(text, media_id)
+                    print("Tweet with image posted:", resp)
+                except Exception as e:
+                    print("Image flow failed, falling back to text-only:", e)
+                    resp = post_tweet(text)
+                    print("Tweet posted:", resp)
+            else:
+                resp = post_tweet(text)
+                print("Tweet posted:", resp)
         except Exception as e:
             print("Error during posting:", e)
-
         print(f"Sleeping for {interval_seconds} seconds...")
         time.sleep(interval_seconds)
 
