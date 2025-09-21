@@ -1,227 +1,297 @@
 import os
 import time
 import random
-import base64
+import hashlib
+import json
+import re
+from datetime import datetime
+
 import requests
 from requests_oauthlib import OAuth1
 
-# Load config from environment variables
+# ========================= Config =========================
+# Twitter credentials
 API_KEY = os.getenv("API_KEY")
 API_SECRET = os.getenv("API_SECRET")
 ACCESS_TOKEN = os.getenv("ACCESS_TOKEN")
 ACCESS_TOKEN_SECRET = os.getenv("ACCESS_TOKEN_SECRET")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-XAI_API_KEY = os.getenv("XAI_API_KEY")
 
-# Text model for tweet generation
+# Gemini for text generation
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
 GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
 
-# Image generation via xAI Grok Images API
-XAI_IMAGES_URL = "https://api.x.ai/v1/images/generations"
-
+# Posting cadence and behavior
 POST_EVERY_HOURS = int(os.getenv("POST_EVERY_HOURS", 1))
-POST_WITH_IMAGES = os.getenv("POST_WITH_IMAGES", "1").lower() in ("1", "true", "yes", "y")
+MIN_WORDS = int(os.getenv("MIN_WORDS", 500))
+MAX_TWEET_LEN = int(os.getenv("MAX_TWEET_LEN", 280))
+LAUNCHPAD_NAME = os.getenv("LAUNCHPAD_NAME", "Your Launchpad")
+
+# Persistence for deduplication
+HISTORY_PATH = os.getenv("HISTORY_PATH", os.path.join("data", "posted_history.jsonl"))
 
 # Twitter endpoints
 TWEET_URL = "https://api.twitter.com/2/tweets"
-UPLOAD_URL = "https://upload.twitter.com/1.1/media/upload.json"
 
-# Example prompts for Gemini
+# ==========================================================
+
+# Example topic prompts to vary themes
 PROMPTS = [
-    "Write a short tweet about the benefits of launching a token on our multi-chain launchpad.",
-    "Create a fun tweet announcing that users can now trade instantly after creating tokens.",
-    "Write a tweet highlighting that our launchpad supports BSC, Base, and Arbitrum.",
-    "Write a hype tweet about how our launchpad gives projects instant liquidity and access to multiple chains.",
-    "Create a tweet showing how easy it is to create and launch tokens for free on our platform.",
-    "Write a tweet encouraging builders to launch on our platform for faster growth and wider exposure.",
-    "Make a tweet that positions our launchpad as the future of token creation and trading.",
-    "Craft a tweet comparing our instant tradability with traditional slow launch processes.",
-    "Write a motivational tweet for crypto founders to choose our multi-chain launchpad for success.",
-    "Write a persuasive tweet that makes builders feel they are missing out if they don’t launch on our multi-chain launchpad.",
-    "Craft a powerful tweet that builds trust and shows our launchpad is the safest way to launch and trade tokens instantly.",
-    "Write a motivational tweet that convinces founders their project will gain massive adoption by choosing our launchpad.",
+    "benefits of launching a token on a multi-chain launchpad",
+    "instant trading after token creation and why it matters",
+    "support for BSC, Base, and Arbitrum and cross-chain reach",
+    "how instant liquidity and multi-chain access accelerates growth",
+    "how to create and launch tokens for free on the platform",
+    "tips for builders to grow faster and reach wider audiences",
+    "why this launchpad represents the future of token creation and trading",
+    "comparison between instant tradability and traditional launch processes",
+    "motivational message to crypto founders to choose a multi-chain launchpad",
+    "FOMO angle showing what founders miss by ignoring a multi-chain launchpad",
+    "safety, credibility and trust when launching and trading instantly",
+    "how choosing the right launchpad drives adoption and community momentum",
 ]
 
 
-def _trim_to_tweet(text: str, limit: int = 280) -> str:
-    text = (text or "").strip()
-    if len(text) <= limit:
-        return text
-    # ensure we don't cut mid-word too harshly
-    trimmed = text[: limit - 1].rstrip()
-    return trimmed + "…"
+# ========================= Helpers =========================
+
+def ensure_dir_for_file(path: str):
+    d = os.path.dirname(path)
+    if d and not os.path.exists(d):
+        os.makedirs(d, exist_ok=True)
 
 
-def generate_tweet() -> str:
-    """Generate tweet text using Gemini. Fallback to a random prompt if it fails."""
-    prompt = random.choice(PROMPTS)
+def normalize_text(text: str) -> str:
+    return re.sub(r"\s+", " ", (text or "").strip()).lower()
+
+
+def text_hash(text: str) -> str:
+    return hashlib.sha256(normalize_text(text).encode("utf-8")).hexdigest()
+
+
+def word_count(text: str) -> int:
+    return len(re.findall(r"[\w’']+", text))
+
+
+def load_history_hashes() -> set:
+    hashes = set()
+    try:
+        with open(HISTORY_PATH, "r", encoding="utf-8") as f:
+            for line in f:
+                try:
+                    obj = json.loads(line)
+                    if "hash" in obj:
+                        hashes.add(obj["hash"])
+                except Exception:
+                    pass
+    except FileNotFoundError:
+        pass
+    return hashes
+
+
+def append_history_record(text: str, tweet_ids: list):
+    ensure_dir_for_file(HISTORY_PATH)
+    record = {
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "hash": text_hash(text),
+        "first_tweet_preview": normalize_text(text)[:200],
+        "word_count": word_count(text),
+        "tweet_ids": tweet_ids,
+    }
+    with open(HISTORY_PATH, "a", encoding="utf-8") as f:
+        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
+# ===================== Text Generation =====================
+
+def build_long_post_prompt(launchpad_name: str, topic: str, min_words: int, variation_id: int) -> str:
+    return (
+        f"Write a detailed, engaging Twitter thread that will be split across multiple tweets. "
+        f"Minimum length: {min_words} words. Focus topic: {topic}. "
+        f"The launchpad is called '{launchpad_name}'. Mention '{launchpad_name}' naturally and contextually throughout the content (not just once). "
+        "Audience: crypto founders, builders, and communities. Tone: confident, helpful, trustworthy, and forward-looking. "
+        "Avoid heavy emoji usage and avoid ALL-CAPS. Provide concrete benefits, examples, and practical guidance. "
+        "Do not include any numbering like 1/, 2/ because the app will split it. Do not include code blocks. "
+        "Use short paragraphs and smooth transitions. If you include hashtags, include 1-3 max at the very end only. "
+        f"Variation ID: {variation_id}."
+    )
+
+
+def gemini_generate_text(prompt: str) -> str:
     headers = {"Content-Type": "application/json"}
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
-    try:
-        r = requests.post(
-            f"{GEMINI_URL}?key={GEMINI_API_KEY}",
-            headers=headers,
-            json=payload,
-            timeout=30,
-        )
-        r.raise_for_status()
-        data = r.json()
-        text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
-        return _trim_to_tweet(text)
-    except Exception as e:
-        print("Gemini text generation failed:", e)
-        return _trim_to_tweet(prompt)  # fallback
-
-
-def build_image_prompt(tweet_text: str) -> str:
-    """Create a descriptive image prompt aligned with the tweet content."""
-    base = (
-        "Create a striking, on-brand social media image that visually represents the following tweet. "
-        "Avoid heavy text; prioritize icons, abstract shapes, charts, coins, and launch/rocket motifs. "
-        "Style: clean, modern, high-contrast, crypto/tech aesthetic, soft rim lighting, volumetric glow. "
-        "Background: gradient or dark with subtle geometric patterns. Composition: square, centered focus.\n\n"
-        f"Tweet: {tweet_text}"
+    r = requests.post(
+        f"{GEMINI_URL}?key={GEMINI_API_KEY}",
+        headers=headers,
+        json=payload,
+        timeout=60,
     )
-    return base
+    r.raise_for_status()
+    data = r.json()
+    return data["candidates"][0]["content"]["parts"][0]["text"].strip()
 
 
-def generate_image(tweet_text: str):
-    """Generate an image with xAI Grok Images API and return (mime_type, image_bytes).
-
-    Returns None on failure.
-    """
-    if not XAI_API_KEY:
-        print("XAI_API_KEY not set; skipping image generation.")
-        return None
-
-    prompt = build_image_prompt(tweet_text)
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {XAI_API_KEY}",
-    }
-    payload = {
-        "model": "grok-2-image",
-        "prompt": prompt,
-        "response_format": "b64_json",
-        "n": 1,
-    }
-
-    try:
-        r = requests.post(
-            XAI_IMAGES_URL,
-            headers=headers,
-            json=payload,
-            timeout=120,
-        )
-        r.raise_for_status()
-        data = r.json()
-        images = data.get("data", [])
-        if not images:
-            print("No image returned by xAI.")
-            return None
-
-        item = images[0]
-        orig_b64 = item.get("b64_json") or ""
-        if not orig_b64:
-            print("xAI response missing b64_json.")
-            return None
-
-        mime_type = "image/jpeg"
-        b64_payload = orig_b64
-        if orig_b64.startswith("data:"):
-            try:
-                header, b64_data = orig_b64.split(",", 1)
-                if "image/png" in header:
-                    mime_type = "image/png"
-                elif "image/jpeg" in header or "image/jpg" in header:
-                    mime_type = "image/jpeg"
-                b64_payload = b64_data
-            except Exception:
-                b64_payload = orig_b64
-
+def generate_long_form_text(min_words: int, launchpad_name: str, history_hashes: set, max_attempts: int = 5) -> str | None:
+    for attempt in range(1, max_attempts + 1):
+        topic = random.choice(PROMPTS)
+        prompt = build_long_post_prompt(launchpad_name, topic, min_words, random.randint(100000, 999999))
         try:
-            return mime_type, base64.b64decode(b64_payload)
+            text = gemini_generate_text(prompt)
         except Exception as e:
-            print("Failed to decode xAI image base64:", e)
-            return None
-    except Exception as e:
-        try:
-            print("xAI image generation failed:", e, "\nResponse:", r.text)
-        except Exception:
-            print("xAI image generation failed:", e)
-        
-        return None
+            print("Gemini text generation failed:", e)
+            text = None
+
+        if not text:
+            continue
+
+        # Ensure launchpad name appears at least twice
+        lc_name = launchpad_name.lower()
+        if normalize_text(text).count(lc_name) < 2:
+            text = f"{launchpad_name} empowers builders across chains. " + text + f"\n\nChoose {launchpad_name} for instant liquidity and reach."
+
+        # Ensure minimum words
+        if word_count(text) < min_words:
+            # Try a light expansion prompt once per attempt
+            try:
+                expand_prompt = (
+                    "Expand and enrich the following content with more examples, practical steps, and details. "
+                    f"Ensure the total is at least {min_words} words and keep the same tone.\n\n" + text
+                )
+                extended = gemini_generate_text(expand_prompt)
+                if word_count(extended) > word_count(text):
+                    text = extended
+            except Exception:
+                pass
+
+        if word_count(text) < min_words:
+            print(f"Attempt {attempt}: not enough words (have {word_count(text)}, need {min_words}).")
+            continue
+
+        h = text_hash(text)
+        if h in history_hashes:
+            print(f"Attempt {attempt}: duplicate content detected, regenerating.")
+            continue
+
+        return text
+
+    print("Failed to generate unique long-form content meeting requirements.")
+    return None
 
 
-def upload_media(image_bytes: bytes, media_type: str = "image/png") -> str:
-    """Upload media to Twitter and return media_id_string."""
+# ======================== Twitter API ========================
+
+def post_tweet(text: str, in_reply_to_id: str | None = None):
     auth = OAuth1(API_KEY, API_SECRET, ACCESS_TOKEN, ACCESS_TOKEN_SECRET)
-    # Twitter v1.1 media upload accepts base64-encoded "media" field
-    media_b64 = base64.b64encode(image_bytes).decode("ascii")
-    data = {
-        "media": media_b64,
-        "media_category": "tweet_image",
-    }
-    r = requests.post(UPLOAD_URL, auth=auth, data=data, timeout=60)
-    if r.status_code not in (200, 201):
-        raise RuntimeError(f"Failed to upload media: {r.status_code} {r.text}")
-    resp = r.json()
-    return resp.get("media_id_string") or str(resp.get("media_id"))
-
-
-def post_tweet(text: str):
-    auth = OAuth1(API_KEY, API_SECRET, ACCESS_TOKEN, ACCESS_TOKEN_SECRET)
-    payload = {"text": text}
-    r = requests.post(TWEET_URL, auth=auth, json=payload, timeout=30)
+    payload: dict = {"text": text}
+    if in_reply_to_id:
+        payload["reply"] = {"in_reply_to_tweet_id": in_reply_to_id}
+    r = requests.post(TWEET_URL, auth=auth, json=payload, timeout=60)
     if r.status_code not in (200, 201):
         raise RuntimeError(f"Failed to post tweet: {r.status_code} {r.text}")
     return r.json()
 
 
-def post_tweet_with_media(text: str, media_id: str):
-    auth = OAuth1(API_KEY, API_SECRET, ACCESS_TOKEN, ACCESS_TOKEN_SECRET)
-    payload = {
-        "text": text,
-        "media": {"media_ids": [media_id]},
-    }
-    r = requests.post(TWEET_URL, auth=auth, json=payload, timeout=30)
-    if r.status_code not in (200, 201):
-        raise RuntimeError(f"Failed to post tweet with media: {r.status_code} {r.text}")
-    return r.json()
+# ==================== Thread Construction ====================
 
+def split_into_tweets(text: str, max_len: int = 280) -> list[str]:
+    # First pass: greedy chunk building by words respecting paragraphs
+    paragraphs = [p.strip() for p in text.split("\n") if p.strip()]
+    chunks: list[str] = []
+    cur = ""
+
+    def flush():
+        nonlocal cur
+        if cur.strip():
+            chunks.append(cur.strip())
+        cur = ""
+
+    for p in paragraphs:
+        words = p.split()
+        for w in words:
+            candidate = (cur + (" " if cur else "") + w).strip()
+            if len(candidate) <= max_len:
+                cur = candidate
+            else:
+                flush()
+                # Long single word fallback
+                if len(w) > max_len:
+                    # hard cut rare pathological token
+                    while len(w) > max_len:
+                        chunks.append(w[: max_len - 1] + "…")
+                        w = w[max_len - 1 :]
+                    cur = w
+                else:
+                    cur = w
+        flush()
+    # Second pass: add numbering suffix (i/N)
+    N = len(chunks)
+    numbered: list[str] = []
+    for i, c in enumerate(chunks, 1):
+        suffix = f" ({i}/{N})"
+        avail = max_len - len(suffix)
+        out = c
+        if len(out) > avail:
+            out = out[: avail - 1].rstrip() + "…"
+        numbered.append(out + suffix)
+    return numbered
+
+
+# =========================== Main ===========================
 
 def main():
+    if not all([API_KEY, API_SECRET, ACCESS_TOKEN, ACCESS_TOKEN_SECRET]):
+        raise RuntimeError("Twitter API credentials are not fully set in environment variables.")
+    if not GEMINI_API_KEY:
+        raise RuntimeError("GEMINI_API_KEY must be set for text generation.")
+
     interval_seconds = max(60, POST_EVERY_HOURS * 3600)
+
+    # Load history set for deduplication
+    history_hashes = load_history_hashes()
+
     while True:
         try:
-            text = generate_tweet()
-            print("Generated tweet:", text)
+            # Generate unique long-form content
+            text = generate_long_form_text(MIN_WORDS, LAUNCHPAD_NAME, history_hashes)
+            if not text:
+                print("Skipping this cycle due to generation constraints.")
+                print(f"Sleeping for {interval_seconds} seconds...")
+                time.sleep(interval_seconds)
+                continue
 
-            if POST_WITH_IMAGES:
-                img = generate_image(text)
-            else:
-                img = None
+            # Split into thread
+            tweets = split_into_tweets(text, MAX_TWEET_LEN)
+            print(f"Posting thread with {len(tweets)} tweets, total words: {word_count(text)}")
 
-            if img:
-                mime, img_bytes = img
+            # Post thread
+            posted_ids: list[str] = []
+            in_reply_to_id = None
+            for idx, chunk in enumerate(tweets):
                 try:
-                    media_id = upload_media(img_bytes, mime)
-                    print("Media uploaded, media_id:", media_id)
-                    resp = post_tweet_with_media(text, media_id)
-                    print("Tweet with image posted:", resp)
+                    resp = post_tweet(chunk, in_reply_to_id=in_reply_to_id)
+                    tweet_id = resp.get("data", {}).get("id")
+                    if not tweet_id:
+                        raise RuntimeError(f"No tweet id in response: {resp}")
+                    posted_ids.append(tweet_id)
+                    in_reply_to_id = tweet_id
                 except Exception as e:
-                    print("Image flow failed, falling back to text-only:", e)
-                    resp = post_tweet(text)
-                    print("Tweet posted:", resp)
+                    print("Failed to post part of the thread:", e)
+                    break
+
+            if posted_ids:
+                # Persist history after successful first tweet
+                append_history_record(text, posted_ids)
+                history_hashes.add(text_hash(text))
+                print("Thread posted. First tweet id:", posted_ids[0])
             else:
-                resp = post_tweet(text)
-                print("Tweet posted:", resp)
+                print("No tweets posted this cycle.")
+
         except Exception as e:
-            print("Error during posting:", e)
+            print("Error during posting loop:", e)
+
         print(f"Sleeping for {interval_seconds} seconds...")
         time.sleep(interval_seconds)
 
 
 if __name__ == "__main__":
     main()
+
