@@ -11,14 +11,14 @@ API_SECRET = os.getenv("API_SECRET")
 ACCESS_TOKEN = os.getenv("ACCESS_TOKEN")
 ACCESS_TOKEN_SECRET = os.getenv("ACCESS_TOKEN_SECRET")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+XAI_API_KEY = os.getenv("XAI_API_KEY")
 
 # Text model for tweet generation
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
 GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
 
-# Image model for image generation
-GEMINI_IMAGE_MODEL = os.getenv("GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image-preview")
-GEMINI_IMAGE_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_IMAGE_MODEL}:generateContent"
+# Image generation via xAI Grok Images API
+XAI_IMAGES_URL = "https://api.x.ai/v1/images/generations"
 
 POST_EVERY_HOURS = int(os.getenv("POST_EVERY_HOURS", 1))
 POST_WITH_IMAGES = os.getenv("POST_WITH_IMAGES", "1").lower() in ("1", "true", "yes", "y")
@@ -87,51 +87,70 @@ def build_image_prompt(tweet_text: str) -> str:
 
 
 def generate_image(tweet_text: str):
-    """Generate an image from Gemini and return (mime_type, image_bytes).
+    """Generate an image with xAI Grok Images API and return (mime_type, image_bytes).
 
     Returns None on failure.
     """
-    if not GEMINI_API_KEY:
-        print("GEMINI_API_KEY not set; skipping image generation.")
+    if not XAI_API_KEY:
+        print("XAI_API_KEY not set; skipping image generation.")
         return None
 
     prompt = build_image_prompt(tweet_text)
-    headers = {"Content-Type": "application/json"}
-    payload = {"contents": [{"parts": [{"text": prompt}]}]}
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {XAI_API_KEY}",
+    }
+    payload = {
+        "model": "grok-2-image",
+        "prompt": prompt,
+        "response_format": "b64_json",
+        "n": 1,
+    }
 
     try:
         r = requests.post(
-            f"{GEMINI_IMAGE_URL}?key={GEMINI_API_KEY}",
+            XAI_IMAGES_URL,
             headers=headers,
             json=payload,
-            timeout=60,
+            timeout=120,
         )
         r.raise_for_status()
         data = r.json()
+        images = data.get("data", [])
+        if not images:
+            print("No image returned by xAI.")
+            return None
 
-        # Find the first inline_data part that looks like an image
-        candidates = data.get("candidates", [])
-        for cand in candidates:
-            content = cand.get("content", {})
-            parts = content.get("parts", [])
-            for part in parts:
-                inline = part.get("inline_data")
-                if inline and isinstance(inline, dict):
-                    mime_type = inline.get("mime_type", "image/png")
-                    b64 = inline.get("data")
-                    if b64:
-                        try:
-                            return mime_type, base64.b64decode(b64)
-                        except Exception:
-                            pass
-        print("No inline_data image returned by Gemini.")
-        return None
-    except Exception as e:
-        # Print response text for easier debugging if available
+        item = images[0]
+        orig_b64 = item.get("b64_json") or ""
+        if not orig_b64:
+            print("xAI response missing b64_json.")
+            return None
+
+        mime_type = "image/jpeg"
+        b64_payload = orig_b64
+        if orig_b64.startswith("data:"):
+            try:
+                header, b64_data = orig_b64.split(",", 1)
+                if "image/png" in header:
+                    mime_type = "image/png"
+                elif "image/jpeg" in header or "image/jpg" in header:
+                    mime_type = "image/jpeg"
+                b64_payload = b64_data
+            except Exception:
+                b64_payload = orig_b64
+
         try:
-            print("Gemini image generation failed:", e, "\nResponse:", r.text)
+            return mime_type, base64.b64decode(b64_payload)
+        except Exception as e:
+            print("Failed to decode xAI image base64:", e)
+            return None
+    except Exception as e:
+        try:
+            print("xAI image generation failed:", e, "\nResponse:", r.text)
         except Exception:
-            print("Gemini image generation failed:", e)
+            print("xAI image generation failed:", e)
+        
         return None
 
 
