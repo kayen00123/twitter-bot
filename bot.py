@@ -1,6 +1,7 @@
 import os
 import time
 import random
+import base64
 import requests
 from requests_oauthlib import OAuth1
 
@@ -13,10 +14,15 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
 POST_EVERY_HOURS = int(os.getenv("POST_EVERY_HOURS", 1))
 
+# Twitter endpoints
 TWEET_URL = "https://api.twitter.com/2/tweets"
-GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
+UPLOAD_URL = "https://upload.twitter.com/1.1/media/upload.json"
 
-# Example prompts for Gemini
+# Gemini endpoints
+GEMINI_TEXT_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
+GEMINI_IMAGE_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateImage"
+
+# Prompts for Gemini
 PROMPTS = [
     "Write a short tweet about the benefits of launching a token on our multi-chain launchpad.",
     "Create a fun tweet announcing that users can now trade instantly after creating tokens.",
@@ -27,52 +33,108 @@ PROMPTS = [
     "Make a tweet that positions our launchpad as the future of token creation and trading.",
     "Craft a tweet comparing our instant tradability with traditional slow launch processes.",
     "Write a motivational tweet for crypto founders to choose our multi-chain launchpad for success.",
-        "Write a persuasive tweet that makes builders feel they are missing out if they don’t launch on our multi-chain launchpad.",
+    "Write a persuasive tweet that makes builders feel they are missing out if they don’t launch on our multi-chain launchpad.",
     "Craft a powerful tweet that builds trust and shows our launchpad is the safest way to launch and trade tokens instantly.",
-    "Write a motivational tweet that convinces founders their project will gain massive adoption by choosing our launchpad.",   
+    "Write a motivational tweet that convinces founders their project will gain massive adoption by choosing our launchpad.",
 ]
 
 
 def generate_tweet():
+    """Generate tweet text using Gemini"""
     prompt = random.choice(PROMPTS)
     headers = {"Content-Type": "application/json"}
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}]
-    }
+    payload = {"contents": [{"parts": [{"text": prompt}]}]}
     try:
         r = requests.post(
-            f"{GEMINI_URL}?key={GEMINI_API_KEY}",
+            f"{GEMINI_TEXT_URL}?key={GEMINI_API_KEY}",
             headers=headers,
             json=payload,
-            timeout=30
+            timeout=30,
         )
         r.raise_for_status()
         data = r.json()
         return data["candidates"][0]["content"]["parts"][0]["text"].strip()
     except Exception as e:
-        print("Gemini generation failed:", e)
+        print("Gemini text generation failed:", e)
         return random.choice(PROMPTS)  # fallback
 
-def post_tweet(text):
+
+def generate_image(prompt):
+    """Generate an image with Gemini and save locally"""
+    headers = {"Content-Type": "application/json"}
+    payload = {"prompt": {"text": prompt}, "size": "1024x1024"}
+    try:
+        r = requests.post(
+            f"{GEMINI_IMAGE_URL}?key={GEMINI_API_KEY}",
+            headers=headers,
+            json=payload,
+            timeout=60,
+        )
+        r.raise_for_status()
+        data = r.json()
+
+        # If Gemini returns base64
+        if "data" in data and len(data["data"]) > 0 and "b64_json" in data["data"][0]:
+            image_b64 = data["data"][0]["b64_json"]
+            file_path = "tweet_image.png"
+            with open(file_path, "wb") as f:
+                f.write(base64.b64decode(image_b64))
+            return file_path
+
+        print("No image generated:", data)
+        return None
+    except Exception as e:
+        print("Gemini image generation failed:", e)
+        return None
+
+
+def upload_media(img_path):
+    """Upload media to Twitter and return media_id"""
+    auth = OAuth1(API_KEY, API_SECRET, ACCESS_TOKEN, ACCESS_TOKEN_SECRET)
+    with open(img_path, "rb") as f:
+        files = {"media": f}
+        r = requests.post(UPLOAD_URL, auth=auth, files=files, timeout=30)
+        r.raise_for_status()
+        media_id = r.json().get("media_id_string")
+        return media_id
+
+
+def post_tweet(text, media_id=None):
+    """Post tweet with optional media"""
     auth = OAuth1(API_KEY, API_SECRET, ACCESS_TOKEN, ACCESS_TOKEN_SECRET)
     payload = {"text": text}
+    if media_id:
+        payload["media"] = {"media_ids": [media_id]}
     r = requests.post(TWEET_URL, auth=auth, json=payload, timeout=30)
     if r.status_code not in (200, 201):
         raise RuntimeError(f"Failed to post tweet: {r.status_code} {r.text}")
     return r.json()
 
+
 def main():
     interval_seconds = max(60, POST_EVERY_HOURS * 3600)
     while True:
         try:
+            # Generate tweet text
             text = generate_tweet()
+
+            # Generate related image
+            image_prompt = f"Create a modern, futuristic crypto launchpad poster about: {text}"
+            img_path = generate_image(image_prompt)
+            media_id = None
+            if img_path:
+                media_id = upload_media(img_path)
+
+            # Post tweet
             print("Posting tweet:", text)
-            resp = post_tweet(text)
+            resp = post_tweet(text, media_id)
             print("Tweet posted:", resp)
         except Exception as e:
             print("Error during posting:", e)
+
         print(f"Sleeping for {interval_seconds} seconds...")
         time.sleep(interval_seconds)
+
 
 if __name__ == "__main__":
     main()
