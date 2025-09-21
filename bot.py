@@ -24,7 +24,6 @@ GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_M
 # Posting cadence and behavior
 POST_EVERY_HOURS = int(os.getenv("POST_EVERY_HOURS", 1))
 MIN_WORDS = int(os.getenv("MIN_WORDS", 500))
-MAX_TWEET_LEN = int(os.getenv("MAX_TWEET_LEN", 280))
 LAUNCHPAD_NAME = os.getenv("LAUNCHPAD_NAME", "Your Launchpad")
 
 # Persistence for deduplication
@@ -93,7 +92,7 @@ def append_history_record(text: str, tweet_ids: list):
     record = {
         "timestamp": datetime.utcnow().isoformat() + "Z",
         "hash": text_hash(text),
-        "first_tweet_preview": normalize_text(text)[:200],
+        "first_chars": normalize_text(text)[:200],
         "word_count": word_count(text),
         "tweet_ids": tweet_ids,
     }
@@ -103,15 +102,14 @@ def append_history_record(text: str, tweet_ids: list):
 
 # ===================== Text Generation =====================
 
-def build_long_post_prompt(launchpad_name: str, topic: str, min_words: int, variation_id: int) -> str:
+def build_long_tweet_prompt(launchpad_name: str, topic: str, min_words: int, variation_id: int) -> str:
     return (
-        f"Write a detailed, engaging Twitter thread that will be split across multiple tweets. "
-        f"Minimum length: {min_words} words. Focus topic: {topic}. "
-        f"The launchpad is called '{launchpad_name}'. Mention '{launchpad_name}' naturally and contextually throughout the content (not just once). "
+        f"Write a SINGLE long tweet (not a thread). Minimum length: {min_words} words. "
+        f"Focus topic: {topic}. The launchpad is called '{launchpad_name}'. Mention '{launchpad_name}' naturally and contextually throughout the content (not just once). "
         "Audience: crypto founders, builders, and communities. Tone: confident, helpful, trustworthy, and forward-looking. "
         "Avoid heavy emoji usage and avoid ALL-CAPS. Provide concrete benefits, examples, and practical guidance. "
-        "Do not include any numbering like 1/, 2/ because the app will split it. Do not include code blocks. "
-        "Use short paragraphs and smooth transitions. If you include hashtags, include 1-3 max at the very end only. "
+        "Do not include numbering (no 1/, 2/) and do not say it will be split into a thread. "
+        "Use short paragraphs separated by single newlines. If you include hashtags, include 1-3 max at the very end only. "
         f"Variation ID: {variation_id}."
     )
 
@@ -130,10 +128,10 @@ def gemini_generate_text(prompt: str) -> str:
     return data["candidates"][0]["content"]["parts"][0]["text"].strip()
 
 
-def generate_long_form_text(min_words: int, launchpad_name: str, history_hashes: set, max_attempts: int = 5) -> str | None:
+def generate_long_tweet(min_words: int, launchpad_name: str, history_hashes: set, max_attempts: int = 5):
     for attempt in range(1, max_attempts + 1):
         topic = random.choice(PROMPTS)
-        prompt = build_long_post_prompt(launchpad_name, topic, min_words, random.randint(100000, 999999))
+        prompt = build_long_tweet_prompt(launchpad_name, topic, min_words, random.randint(100000, 999999))
         try:
             text = gemini_generate_text(prompt)
         except Exception as e:
@@ -150,7 +148,6 @@ def generate_long_form_text(min_words: int, launchpad_name: str, history_hashes:
 
         # Ensure minimum words
         if word_count(text) < min_words:
-            # Try a light expansion prompt once per attempt
             try:
                 expand_prompt = (
                     "Expand and enrich the following content with more examples, practical steps, and details. "
@@ -173,66 +170,19 @@ def generate_long_form_text(min_words: int, launchpad_name: str, history_hashes:
 
         return text
 
-    print("Failed to generate unique long-form content meeting requirements.")
+    print("Failed to generate unique long-form tweet meeting requirements.")
     return None
 
 
 # ======================== Twitter API ========================
 
-def post_tweet(text: str, in_reply_to_id: str | None = None):
+def post_tweet(text: str):
     auth = OAuth1(API_KEY, API_SECRET, ACCESS_TOKEN, ACCESS_TOKEN_SECRET)
-    payload: dict = {"text": text}
-    if in_reply_to_id:
-        payload["reply"] = {"in_reply_to_tweet_id": in_reply_to_id}
+    payload = {"text": text}
     r = requests.post(TWEET_URL, auth=auth, json=payload, timeout=60)
     if r.status_code not in (200, 201):
         raise RuntimeError(f"Failed to post tweet: {r.status_code} {r.text}")
     return r.json()
-
-
-# ==================== Thread Construction ====================
-
-def split_into_tweets(text: str, max_len: int = 280) -> list[str]:
-    # First pass: greedy chunk building by words respecting paragraphs
-    paragraphs = [p.strip() for p in text.split("\n") if p.strip()]
-    chunks: list[str] = []
-    cur = ""
-
-    def flush():
-        nonlocal cur
-        if cur.strip():
-            chunks.append(cur.strip())
-        cur = ""
-
-    for p in paragraphs:
-        words = p.split()
-        for w in words:
-            candidate = (cur + (" " if cur else "") + w).strip()
-            if len(candidate) <= max_len:
-                cur = candidate
-            else:
-                flush()
-                # Long single word fallback
-                if len(w) > max_len:
-                    # hard cut rare pathological token
-                    while len(w) > max_len:
-                        chunks.append(w[: max_len - 1] + "…")
-                        w = w[max_len - 1 :]
-                    cur = w
-                else:
-                    cur = w
-        flush()
-    # Second pass: add numbering suffix (i/N)
-    N = len(chunks)
-    numbered: list[str] = []
-    for i, c in enumerate(chunks, 1):
-        suffix = f" ({i}/{N})"
-        avail = max_len - len(suffix)
-        out = c
-        if len(out) > avail:
-            out = out[: avail - 1].rstrip() + "…"
-        numbered.append(out + suffix)
-    return numbered
 
 
 # =========================== Main ===========================
@@ -244,46 +194,34 @@ def main():
         raise RuntimeError("GEMINI_API_KEY must be set for text generation.")
 
     interval_seconds = max(60, POST_EVERY_HOURS * 3600)
-
-    # Load history set for deduplication
     history_hashes = load_history_hashes()
 
     while True:
         try:
-            # Generate unique long-form content
-            text = generate_long_form_text(MIN_WORDS, LAUNCHPAD_NAME, history_hashes)
+            text = generate_long_tweet(MIN_WORDS, LAUNCHPAD_NAME, history_hashes)
             if not text:
                 print("Skipping this cycle due to generation constraints.")
                 print(f"Sleeping for {interval_seconds} seconds...")
                 time.sleep(interval_seconds)
                 continue
 
-            # Split into thread
-            tweets = split_into_tweets(text, MAX_TWEET_LEN)
-            print(f"Posting thread with {len(tweets)} tweets, total words: {word_count(text)}")
-
-            # Post thread
-            posted_ids: list[str] = []
-            in_reply_to_id = None
-            for idx, chunk in enumerate(tweets):
-                try:
-                    resp = post_tweet(chunk, in_reply_to_id=in_reply_to_id)
-                    tweet_id = resp.get("data", {}).get("id")
-                    if not tweet_id:
-                        raise RuntimeError(f"No tweet id in response: {resp}")
-                    posted_ids.append(tweet_id)
-                    in_reply_to_id = tweet_id
-                except Exception as e:
-                    print("Failed to post part of the thread:", e)
-                    break
-
-            if posted_ids:
-                # Persist history after successful first tweet
-                append_history_record(text, posted_ids)
+            print(f"Attempting to post a single long tweet, words: {word_count(text)}")
+            try:
+                resp = post_tweet(text)
+                tweet_id = resp.get("data", {}).get("id")
+                if not tweet_id:
+                    raise RuntimeError(f"No tweet id in response: {resp}")
+                append_history_record(text, [tweet_id])
                 history_hashes.add(text_hash(text))
-                print("Thread posted. First tweet id:", posted_ids[0])
-            else:
-                print("No tweets posted this cycle.")
+                print("Posted single tweet. Tweet id:", tweet_id)
+            except Exception as e:
+                msg = str(e)
+                if " 429 " in msg:
+                    print("Rate limited (429). Your app/account hit posting limits. Retrying next cycle.")
+                elif " 400 " in msg and "Too Long" in msg:
+                    print("Tweet too long for this account. Long posts require X Premium/Paid plan on X API.")
+                else:
+                    print("Failed to post:", e)
 
         except Exception as e:
             print("Error during posting loop:", e)
