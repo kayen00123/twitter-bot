@@ -18,7 +18,6 @@ GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_M
 
 # Example prompts for Gemini
 PROMPTS = [
-   PROMPTS = [
     "Write a short tweet about the benefits of launching a token on our multi-chain launchpad.",
     "Create a fun tweet announcing that users can now trade instantly after creating tokens.",
     "Write a tweet highlighting that our launchpad supports BSC, Base, and Arbitrum.",
