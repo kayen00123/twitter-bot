@@ -18,10 +18,21 @@ GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_M
 
 # Example prompts for Gemini
 PROMPTS = [
+   PROMPTS = [
     "Write a short tweet about the benefits of launching a token on our multi-chain launchpad.",
     "Create a fun tweet announcing that users can now trade instantly after creating tokens.",
     "Write a tweet highlighting that our launchpad supports BSC, Base, and Arbitrum.",
+    "Write a hype tweet about how our launchpad gives projects instant liquidity and access to multiple chains.",
+    "Create a tweet showing how easy it is to create and launch tokens for free on our platform.",
+    "Write a tweet encouraging builders to launch on our platform for faster growth and wider exposure.",
+    "Make a tweet that positions our launchpad as the future of token creation and trading.",
+    "Craft a tweet comparing our instant tradability with traditional slow launch processes.",
+    "Write a motivational tweet for crypto founders to choose our multi-chain launchpad for success.",
+        "Write a persuasive tweet that makes builders feel they are missing out if they don’t launch on our multi-chain launchpad.",
+    "Craft a powerful tweet that builds trust and shows our launchpad is the safest way to launch and trade tokens instantly.",
+    "Write a motivational tweet that convinces founders their project will gain massive adoption by choosing our launchpad.",   
 ]
+
 
 def generate_tweet():
     prompt = random.choice(PROMPTS)
