@@ -26,8 +26,10 @@ POST_EVERY_HOURS = int(os.getenv("POST_EVERY_HOURS", 1))
 LAUNCHPAD_NAME = os.getenv("LAUNCHPAD_NAME", "wenlambo")
 LAUNCHPAD_WEBSITE = os.getenv("LAUNCHPAD_WEBSITE", "wenlambo.lol")
 
-# Persistence for deduplication
-HISTORY_PATH = os.getenv("HISTORY_PATH", os.path.join("data", "posted_history.jsonl"))
+# Persistence for deduplication and website usage
+DATA_DIR = os.getenv("DATA_DIR", "data")
+HISTORY_PATH = os.getenv("HISTORY_PATH", os.path.join(DATA_DIR, "posted_history.jsonl"))
+WEBSITE_USAGE_PATH = os.getenv("WEBSITE_USAGE_PATH", os.path.join(DATA_DIR, "website_usage.json"))
 
 # Twitter endpoints
 TWEET_URL = "https://api.twitter.com/2/tweets"
@@ -55,6 +57,7 @@ PROMPTS = [
     "alpha isn't a Discord role, it's shipping your token before the hype",
     "if your community asks 'wen', answer with a live chart not a roadmap",
 ]
+
 
 # ========================= Helpers =========================
 
@@ -98,31 +101,61 @@ def load_history_hashes() -> set:
 
 def append_history_record(text: str, tweet_ids: list):
     ensure_dir_for_file(HISTORY_PATH)
+    has_website = LAUNCHPAD_WEBSITE.lower() in normalize_text(text)
     record = {
         "timestamp": datetime.utcnow().isoformat() + "Z",
         "hash": text_hash(text),
         "preview": normalize_text(text)[:200],
         "tweet_ids": tweet_ids,
+        "has_website": has_website,
     }
     with open(HISTORY_PATH, "a", encoding="utf-8") as f:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
+def _today_str() -> str:
+    return datetime.utcnow().date().isoformat()
+
+
+def _load_site_usage() -> dict:
+    try:
+        with open(WEBSITE_USAGE_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def should_include_site_today() -> bool:
+    usage = _load_site_usage()
+    return usage.get("date") != _today_str() or not usage.get("used", False)
+
+
+def mark_site_used_today():
+    ensure_dir_for_file(WEBSITE_USAGE_PATH)
+    usage = {"date": _today_str(), "used": True}
+    with open(WEBSITE_USAGE_PATH, "w", encoding="utf-8") as f:
+        json.dump(usage, f)
+
+
 # ===================== Text Generation =====================
 
-def build_viral_prompt(launchpad_name: str, website: str, seed: str) -> str:
-    return (
-        "You are crafting a SINGLE viral-style crypto tweet. It must be punchy, humorous or mildly controversial, and persuasive.\n"
-        f"Brand: {launchpad_name} | Site: {website}.\n"
-        "Hard rules:\n"
-        "- Output ONE tweet only, no preambles or explanations.\n"
-        "- Max 260 characters (leave room for final brand/site append).\n"
-        f"- Include '{launchpad_name}' or '{website}' naturally at least once.\n"
-        "- Strong hook at the start, compelling CTA to follow or visit the site.\n"
-        "- 0-3 hashtags max. 0-2 emojis max. No lists, no numbering, no quotes around the tweet.\n"
-        "- No links except the site if used. No disclaimers.\n\n"
-        f"Theme seed: {seed}."
-    )
+def build_viral_prompt(launchpad_name: str, website: str, seed: str, include_site: bool) -> str:
+    rules = [
+        "You are crafting a SINGLE viral-style crypto tweet. It must be punchy, humorous or mildly controversial, and persuasive.",
+        f"Brand: {launchpad_name} | Site: {website}.",
+        "Hard rules:",
+        "- Output ONE tweet only, no preambles or explanations.",
+        "- Max 260 characters (leave room for final brand/site append).",
+        f"- Must include '{launchpad_name}' naturally.",
+        "- Strong hook at the start, compelling CTA to follow or check the brand.",
+        "- 0-3 hashtags max. 0-2 emojis max. No lists, no numbering, no quotes around the tweet.",
+    ]
+    if include_site:
+        rules.append(f"- Include '{website}' exactly once.")
+    else:
+        rules.append(f"- Do NOT include any URLs or the domain '{website}'.")
+    rules.append("")
+    return "\n".join(rules) + f"\nTheme seed: {seed}."
 
 
 def gemini_generate_text(prompt: str) -> str:
@@ -139,45 +172,53 @@ def gemini_generate_text(prompt: str) -> str:
     return data["candidates"][0]["content"]["parts"][0]["text"].strip()
 
 
-def ensure_brand_presence(text: str, launchpad_name: str, website: str) -> str:
-    lt = text.lower()
-    has_brand = launchpad_name.lower() in lt
-    has_site = website.lower() in lt
-    appendix = None
-    if not (has_brand or has_site):
-        # Prefer appending website to drive traffic
-        appendix = f" — {website}"
-    if appendix:
-        # Try to append; if it exceeds limit, trim first
-        candidate = text + appendix
-        return _trim_to_tweet(candidate, 280)
-    return text
+def ensure_brand_and_site(text: str, launchpad_name: str, website: str, include_site: bool) -> str:
+    t = re.sub(r"\s+", " ", (text or "").strip())
+    lt = t.lower()
+
+    # Ensure brand name appears
+    if launchpad_name.lower() not in lt:
+        candidate = t + f" — {launchpad_name}"
+        t = _trim_to_tweet(candidate, 280)
+        lt = t.lower()
+
+    # Handle website presence based on policy
+    if include_site:
+        if website.lower() not in lt:
+            candidate = t + f" — {website}"
+            t = _trim_to_tweet(candidate, 280)
+    else:
+        # Remove website if model added it
+        pattern = re.compile(re.escape(website), flags=re.IGNORECASE)
+        t = pattern.sub("", t)
+        t = re.sub(r"\s{2,}", " ", t).strip()
+
+    return t
 
 
-def finalize_tweet(text: str, launchpad_name: str, website: str) -> str:
+def finalize_tweet(text: str, launchpad_name: str, website: str, include_site: bool) -> str:
     # Remove surrounding quotes if model added them
     if (text.startswith("\"") and text.endswith("\"")) or (text.startswith("'") and text.endswith("'")):
         text = text[1:-1]
-    text = re.sub(r"\s+", " ", text).strip()
-    text = ensure_brand_presence(text, launchpad_name, website)
+    text = ensure_brand_and_site(text, launchpad_name, website, include_site)
     # Final trim to 280 chars
     return _trim_to_tweet(text, 280)
 
 
-def generate_viral_tweet(launchpad_name: str, website: str, history_hashes: set, max_attempts: int = 8) -> str | None:
+def generate_viral_tweet(launchpad_name: str, website: str, history_hashes: set, include_site: bool, max_attempts: int = 8) -> str | None:
     for attempt in range(1, max_attempts + 1):
         seed = random.choice(PROMPTS)
-        prompt = build_viral_prompt(launchpad_name, website, seed)
+        prompt = build_viral_prompt(launchpad_name, website, seed, include_site)
         try:
             text = gemini_generate_text(prompt)
         except Exception as e:
-            print("Gemini text generation failed:", e)
+            print("Gemini text generation failed", e)
             text = None
 
         if not text:
             continue
 
-        text = finalize_tweet(text, launchpad_name, website)
+        text = finalize_tweet(text, launchpad_name, website, include_site)
         if not text:
             continue
 
@@ -186,7 +227,7 @@ def generate_viral_tweet(launchpad_name: str, website: str, history_hashes: set,
             print(f"Attempt {attempt}: duplicate tweet detected, regenerating.")
             continue
 
-        # Basic sanity: tweet length and minimal substance
+        # Basic sanity: tweet length
         if len(text) < 40:
             print(f"Attempt {attempt}: too short after finalization, retrying.")
             continue
@@ -221,14 +262,15 @@ def main():
 
     while True:
         try:
-            text = generate_viral_tweet(LAUNCHPAD_NAME, LAUNCHPAD_WEBSITE, history_hashes)
+            include_site = should_include_site_today()
+            text = generate_viral_tweet(LAUNCHPAD_NAME, LAUNCHPAD_WEBSITE, history_hashes, include_site=include_site)
             if not text:
                 print("Skipping this cycle due to generation constraints.")
                 print(f"Sleeping for {interval_seconds} seconds...")
                 time.sleep(interval_seconds)
                 continue
 
-            print(f"Posting viral tweet (len={len(text)}):", text)
+            print(f"Posting viral tweet (len={len(text)}, include_site={include_site}):", text)
             try:
                 resp = post_tweet(text)
                 tweet_id = resp.get("data", {}).get("id")
@@ -236,6 +278,8 @@ def main():
                     raise RuntimeError(f"No tweet id in response: {resp}")
                 append_history_record(text, [tweet_id])
                 history_hashes.add(text_hash(text))
+                if include_site and LAUNCHPAD_WEBSITE.lower() in normalize_text(text):
+                    mark_site_used_today()
                 print("Tweet posted. Tweet id:", tweet_id)
             except Exception as e:
                 msg = str(e)
