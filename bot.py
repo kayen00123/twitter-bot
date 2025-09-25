@@ -38,26 +38,27 @@ TWEET_URL = "https://api.twitter.com/2/tweets"
 
 # Viral prompt seeds: crypto humor + controversy + CTA
 PROMPTS = [
-    # Humor
-    "light-hearted roast of 'wen lambo' culture, playful degen vibes, punchy hook, invite to actually build",
-    "gas fees jokes and meme-NRG about launching tokens smarter, not harder",
-    "the eternal cycle: buy top, sell bottom, then build smarter with a real launchpad",
-    "gm/gm? markets down, memes up — turn cope into tokens with an easy launch",
-    "everyone's 'early' after it's trending — be actually early by deploying now",
-    # Controversy (spicy but not toxic)
-    "memecoins vs 'serious' tokens: why speed + liquidity beats pure whitepapers",
-    "KOL pumps and VC allocations are cool until you need liquidity and users",
-    "centralized exchange listing dreams vs instant trading reality",
-    "rug paranoia is valid — transparency + instant tradability wins trust",
-    "are presales dead? launch first, build community from day one",
-    # FOMO + CTA
-    "ship today, iterate tomorrow: fast launch, instant trading, real momentum",
-    "turn your idea into a token in minutes — then let the market speak",
-    "builders who wait lose narrative — deploy now and write your own story",
-    "alpha isn't a Discord role, it's shipping your token before the hype",
-    "if your community asks 'wen', answer with a live chart not a roadmap",
-]
+    # Hype / Shill
+    "Write a hype-heavy crypto tweet about a launchpad that offers free token creation, 0.1% per swap fees for creators, weekly airdrops, staking, and token registration. Keep it human, fun, full of energy, with natural emojis. Max 150 words.",
+    
+    "Create a short, meme-style shill tweet about a launchpad where creators earn 0.1% per swap and users get weekly airdrops. Use emojis 💸🔥 and hype slang, but keep it sounding like a real human. Max 150 words.",
+    
+    "Write a convincing, friendly tweet that reassures creators and users this launchpad is safe, rewarding, and built for growth. Emphasize trust 🤝, rewards 🎁, and fairness. Keep it natural, under 150 words.",
+    
+    "Write a direct, bold tweet comparing our launchpad with others. Show how ours is fairer (0.1% fees), more rewarding (airdrops + staking), and open to everyone. Make it human, punchy, with emojis ⚡📊. Max 150 words.",
+    
+    # 😂 Crypto Humor
+    "Write a funny crypto tweet about how everyone’s making tokens these days 😂, but at least on our launchpad it’s free and pays creators 0.1% per swap. Use memes, emojis, and crypto slang — but keep it short and human. Max 150 words.",
+    
+    "Make a humorous, relatable crypto tweet about how degens chase airdrops everywhere 🏃💨, but here they get weekly airdrops automatically 🎁. Keep it playful with emojis, natural tone, and under 150 words."
 
+    # 🗣️ Community Engagement Prompts
+"Write a fun, hype tweet asking the community what the next big memecoin is 🐸🚀. Make it playful, use emojis, and keep it under 150 words. Encourage replies and hot takes.",
+
+"Create a tweet that asks builders and degens what feature they want most in a launchpad 🔧✨. Keep the tone human, curious, with emojis. Max 150 words. Make it feel like we actually want their ideas.",
+
+"Write a tweet that starts with a bold question like ‘What’s the wildest token idea you’ve seen this week?’ 👀🔥. Make it meme-friendly, invite replies, use emojis, and keep it under 150 words."
+]
 
 # ========================= Helpers =========================
 
@@ -75,7 +76,7 @@ def text_hash(text: str) -> str:
     return hashlib.sha256(normalize_text(text).encode("utf-8")).hexdigest()
 
 
-def _trim_to_tweet(text: str, limit: int = 280) -> str:
+def _trim_to_tweet(text: str, limit: int = 150) -> str:
     text = (text or "").strip()
     if len(text) <= limit:
         return text
@@ -145,7 +146,7 @@ def build_viral_prompt(launchpad_name: str, website: str, seed: str, include_sit
         f"Brand: {launchpad_name} | Site: {website}.",
         "Hard rules:",
         "- Output ONE tweet only, no preambles or explanations.",
-        "- Max 260 characters (leave room for final brand/site append).",
+        "- Max 150 characters (leave room for final brand/site append).",
         f"- Must include '{launchpad_name}' naturally.",
         "- Strong hook at the start, compelling CTA to follow or check the brand.",
         "- 0-3 hashtags max. 0-2 emojis max. No lists, no numbering, no quotes around the tweet.",
@@ -179,14 +180,14 @@ def ensure_brand_and_site(text: str, launchpad_name: str, website: str, include_
     # Ensure brand name appears
     if launchpad_name.lower() not in lt:
         candidate = t + f" — {launchpad_name}"
-        t = _trim_to_tweet(candidate, 280)
+        t = _trim_to_tweet(candidate, 150)
         lt = t.lower()
 
     # Handle website presence based on policy
     if include_site:
         if website.lower() not in lt:
             candidate = t + f" — {website}"
-            t = _trim_to_tweet(candidate, 280)
+            t = _trim_to_tweet(candidate, 150)
     else:
         # Remove website if model added it
         pattern = re.compile(re.escape(website), flags=re.IGNORECASE)
@@ -201,7 +202,7 @@ def finalize_tweet(text: str, launchpad_name: str, website: str, include_site: b
     if (text.startswith("\"") and text.endswith("\"")) or (text.startswith("'") and text.endswith("'")):
         text = text[1:-1]
     text = ensure_brand_and_site(text, launchpad_name, website, include_site)
-    # Final trim to 280 chars
+    # Final trim to 150 chars
     return _trim_to_tweet(text, 280)
 
 
