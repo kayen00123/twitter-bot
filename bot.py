@@ -4,7 +4,7 @@ import random
 import hashlib
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 
 import requests
 from requests_oauthlib import OAuth1
@@ -16,10 +16,12 @@ API_SECRET = os.getenv("API_SECRET")
 ACCESS_TOKEN = os.getenv("ACCESS_TOKEN")
 ACCESS_TOKEN_SECRET = os.getenv("ACCESS_TOKEN_SECRET")
 
+from datetime import datetime, timezone
+
 # Gemini for text generation
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
-GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash-latest")
+GEMINI_URL = f"https://generativelanguage.googleapis.com/v1/models/{GEMINI_MODEL}:generateContent"
 
 # Posting cadence and behavior
 POST_EVERY_HOURS = int(os.getenv("POST_EVERY_HOURS", 1))
@@ -60,6 +62,7 @@ PROMPTS = [
 "Write a tweet that starts with a bold question like ‘What’s the wildest token idea you’ve seen this week?’ 👀🔥. Make it meme-friendly, invite replies, use emojis, and keep it under 150 words."
 ]
 
+
 # ========================= Helpers =========================
 
 def ensure_dir_for_file(path: str):
@@ -76,7 +79,7 @@ def text_hash(text: str) -> str:
     return hashlib.sha256(normalize_text(text).encode("utf-8")).hexdigest()
 
 
-def _trim_to_tweet(text: str, limit: int = 150) -> str:
+def _trim_to_tweet(text: str, limit: int = 280) -> str:
     text = (text or "").strip()
     if len(text) <= limit:
         return text
@@ -104,7 +107,7 @@ def append_history_record(text: str, tweet_ids: list):
     ensure_dir_for_file(HISTORY_PATH)
     has_website = LAUNCHPAD_WEBSITE.lower() in normalize_text(text)
     record = {
-        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "hash": text_hash(text),
         "preview": normalize_text(text)[:200],
         "tweet_ids": tweet_ids,
@@ -115,7 +118,7 @@ def append_history_record(text: str, tweet_ids: list):
 
 
 def _today_str() -> str:
-    return datetime.utcnow().date().isoformat()
+    return datetime.now(timezone.utc).date().isoformat()
 
 
 def _load_site_usage() -> dict:
@@ -146,7 +149,7 @@ def build_viral_prompt(launchpad_name: str, website: str, seed: str, include_sit
         f"Brand: {launchpad_name} | Site: {website}.",
         "Hard rules:",
         "- Output ONE tweet only, no preambles or explanations.",
-        "- Max 150 characters (leave room for final brand/site append).",
+        "- Max 260 characters (leave room for final brand/site append).",
         f"- Must include '{launchpad_name}' naturally.",
         "- Strong hook at the start, compelling CTA to follow or check the brand.",
         "- 0-3 hashtags max. 0-2 emojis max. No lists, no numbering, no quotes around the tweet.",
@@ -180,14 +183,14 @@ def ensure_brand_and_site(text: str, launchpad_name: str, website: str, include_
     # Ensure brand name appears
     if launchpad_name.lower() not in lt:
         candidate = t + f" — {launchpad_name}"
-        t = _trim_to_tweet(candidate, 150)
+        t = _trim_to_tweet(candidate, 280)
         lt = t.lower()
 
     # Handle website presence based on policy
     if include_site:
         if website.lower() not in lt:
             candidate = t + f" — {website}"
-            t = _trim_to_tweet(candidate, 150)
+            t = _trim_to_tweet(candidate, 280)
     else:
         # Remove website if model added it
         pattern = re.compile(re.escape(website), flags=re.IGNORECASE)
@@ -202,7 +205,7 @@ def finalize_tweet(text: str, launchpad_name: str, website: str, include_site: b
     if (text.startswith("\"") and text.endswith("\"")) or (text.startswith("'") and text.endswith("'")):
         text = text[1:-1]
     text = ensure_brand_and_site(text, launchpad_name, website, include_site)
-    # Final trim to 150 chars
+    # Final trim to 280 chars
     return _trim_to_tweet(text, 280)
 
 
@@ -298,5 +301,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
