@@ -5,6 +5,7 @@ import hashlib
 import json
 import re
 from datetime import datetime, timezone
+from typing import Optional
 
 import requests
 from requests_oauthlib import OAuth1
@@ -15,8 +16,6 @@ API_KEY = os.getenv("API_KEY")
 API_SECRET = os.getenv("API_SECRET")
 ACCESS_TOKEN = os.getenv("ACCESS_TOKEN")
 ACCESS_TOKEN_SECRET = os.getenv("ACCESS_TOKEN_SECRET")
-
-from datetime import datetime, timezone
 
 # Gemini for text generation
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -39,8 +38,8 @@ TWEET_URL = "https://api.twitter.com/2/tweets"
 # ==========================================================
 
 # Viral prompt seeds: crypto humor + controversy + CTA
-PROMPT = [
-  short tweet that highlights what my launchpad offers, like free token creation and registration of tokens created outside our platform, 0.1% fees for creators on there tokens, users get weekly airdrop, staking opportunity and many more, make the tweet to be very convincing and like giving maximum assurance. Keep it human, fun, full of energy, with natural emojis. Max 150 words."
+PROMPTS = [
+  "short tweet that highlights what my launchpad offers, like free token creation and registration of tokens created outside our platform, 0.1% fees for creators on their tokens, users get weekly airdrop, staking opportunity and many more, make the tweet to be very convincing and like giving maximum assurance. Keep it human, fun, full of energy, with natural emojis. Max 150 words."
 ]
 
 
@@ -190,7 +189,7 @@ def finalize_tweet(text: str, launchpad_name: str, website: str, include_site: b
     return _trim_to_tweet(text, 280)
 
 
-def generate_viral_tweet(launchpad_name: str, website: str, history_hashes: set, include_site: bool, max_attempts: int = 8) -> str | None:
+def generate_viral_tweet(launchpad_name: str, website: str, history_hashes: set, include_site: bool, max_attempts: int = 8) -> Optional[str]:
     for attempt in range(1, max_attempts + 1):
         seed = random.choice(PROMPTS)
         prompt = build_viral_prompt(launchpad_name, website, seed, include_site)
@@ -282,6 +281,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
