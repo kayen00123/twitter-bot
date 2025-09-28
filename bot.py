@@ -40,7 +40,7 @@ TWEET_URL = "https://api.twitter.com/2/tweets"
 
 # Viral prompt seeds: crypto humor + controversy + CTA
 PROMPT = [
-    # short tweet that highlights what my launchpad offers, like free token creation and registration of tokens created outside our platform, 0.1% fees for creators on there tokens, users get weekly airdrop, staking opportunity and many more, make the tweet to be very convincing and like giving maximum assurance. Keep it human, fun, full of energy, with natural emojis. Max 150 words."
+  short tweet that highlights what my launchpad offers, like free token creation and registration of tokens created outside our platform, 0.1% fees for creators on there tokens, users get weekly airdrop, staking opportunity and many more, make the tweet to be very convincing and like giving maximum assurance. Keep it human, fun, full of energy, with natural emojis. Max 150 words."
 ]
 
 
