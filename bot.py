@@ -39,27 +39,8 @@ TWEET_URL = "https://api.twitter.com/2/tweets"
 # ==========================================================
 
 # Viral prompt seeds: crypto humor + controversy + CTA
-PROMPTS = [
-    # Hype / Shill
-    "Write a hype-heavy crypto tweet about a launchpad that offers free token creation, 0.1% per swap fees for creators, weekly airdrops, staking, and token registration. Keep it human, fun, full of energy, with natural emojis. Max 150 words.",
-    
-    "Create a short, meme-style shill tweet about a launchpad where creators earn 0.1% per swap and users get weekly airdrops. Use emojis 💸🔥 and hype slang, but keep it sounding like a real human. Max 150 words.",
-    
-    "Write a convincing, friendly tweet that reassures creators and users this launchpad is safe, rewarding, and built for growth. Emphasize trust 🤝, rewards 🎁, and fairness. Keep it natural, under 150 words.",
-    
-    "Write a direct, bold tweet comparing our launchpad with others. Show how ours is fairer (0.1% fees), more rewarding (airdrops + staking), and open to everyone. Make it human, punchy, with emojis ⚡📊. Max 150 words.",
-    
-    # 😂 Crypto Humor
-    "Write a funny crypto tweet about how everyone’s making tokens these days 😂, but at least on our launchpad it’s free and pays creators 0.1% per swap. Use memes, emojis, and crypto slang — but keep it short and human. Max 150 words.",
-    
-    "Make a humorous, relatable crypto tweet about how degens chase airdrops everywhere 🏃💨, but here they get weekly airdrops automatically 🎁. Keep it playful with emojis, natural tone, and under 150 words."
-
-    # 🗣️ Community Engagement Prompts
-"Write a fun, hype tweet asking the community what the next big memecoin is 🐸🚀. Make it playful, use emojis, and keep it under 150 words. Encourage replies and hot takes.",
-
-"Create a tweet that asks builders and degens what feature they want most in a launchpad 🔧✨. Keep the tone human, curious, with emojis. Max 150 words. Make it feel like we actually want their ideas.",
-
-"Write a tweet that starts with a bold question like ‘What’s the wildest token idea you’ve seen this week?’ 👀🔥. Make it meme-friendly, invite replies, use emojis, and keep it under 150 words."
+PROMPT = [
+    # short tweet that highlights what my launchpad offers, like free token creation and registration of tokens created outside our platform, 0.1% fees for creators on there tokens, users get weekly airdrop, staking opportunity and many more, make the tweet to be very convincing and like giving maximum assurance. Keep it human, fun, full of energy, with natural emojis. Max 150 words."
 ]
 
 
