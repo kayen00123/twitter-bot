@@ -23,7 +23,7 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
 GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
 
 # Posting cadence and behavior
-POST_EVERY_HOURS = int(os.getenv("POST_EVERY_HOURS", 1))
+POST_EVERY_HOURS = int(os.getenv("POST_EVERY_HOURS", 3))  # tweet every 3 hours
 LAUNCHPAD_NAME = os.getenv("LAUNCHPAD_NAME", "wenlambo")
 LAUNCHPAD_WEBSITE = os.getenv("LAUNCHPAD_WEBSITE", "wenlambo.lol")
 
@@ -37,11 +37,29 @@ TWEET_URL = "https://api.twitter.com/2/tweets"
 
 # ==========================================================
 
-# Viral prompt seeds: crypto humor + controversy + CTA
+# Viral prompt seeds: mix of launchpad hype + memes + questions
 PROMPTS = [
-  "short tweet that highlights what my launchpad offers, like free token creation and registration of tokens created outside our platform, 0.1% fees for creators on their tokens, users get weekly airdrop, staking opportunity and many more, make the tweet to be very convincing and like giving maximum assurance. Keep it human, fun, full of energy, with natural emojis. Max 150 words."
+    # Direct launchpad promo
+    "short tweet that highlights what wenlambo launchpad offers, like free token creation and registration of tokens created outside the platform, 0.1% fees for creators, weekly airdrops, staking, and many more. Make it very convincing, fun, and full of energy with natural emojis.",
+
+    "craft a viral tweet hyping how wenlambo is the launchpad for degens tired of high fees and complex tools. compare it with typical crypto pain points and show how easy it is to mint, trade, and stake instantly. keep it fun and punchy.",
+
+    # General crypto humor
+    "make a meme-style crypto tweet comparing the chaos of rugpulls and gas wars to how simple it feels trading on a good launchpad. add crypto slang, humor, and energy. short, fun, natural.",
+
+    "write a degen humor tweet about how everyone in crypto is waiting for the next moonshot, but only smart traders find the early gems. keep it fun, sarcastic, and engaging.",
+
+    # Engagement style
+    "ask the crypto community: which memecoin is the best right now? which one will actually moon next? make it hype and engaging, encouraging replies. fun degen-style with emojis.",
+
+    "create a crypto culture tweet referencing trends like memecoins, staking, and airdrops. make it feel like a community vibe, fun and fast-paced."
 ]
 
+# Default crypto hashtags pool
+CRYPTO_HASHTAGS = [
+    "#crypto", "#bnb", "#ethereum", "#bitcoin", "#memecoin",
+    "#blockchain", "#web3", "#trading", "#altcoins", "#defi"
+]
 
 # ========================= Helpers =========================
 
@@ -50,14 +68,11 @@ def ensure_dir_for_file(path: str):
     if d and not os.path.exists(d):
         os.makedirs(d, exist_ok=True)
 
-
 def normalize_text(text: str) -> str:
     return re.sub(r"\s+", " ", (text or "").strip()).lower()
 
-
 def text_hash(text: str) -> str:
     return hashlib.sha256(normalize_text(text).encode("utf-8")).hexdigest()
-
 
 def _trim_to_tweet(text: str, limit: int = 280) -> str:
     text = (text or "").strip()
@@ -65,7 +80,6 @@ def _trim_to_tweet(text: str, limit: int = 280) -> str:
         return text
     trimmed = text[: limit - 1].rstrip()
     return trimmed + "…"
-
 
 def load_history_hashes() -> set:
     hashes = set()
@@ -82,7 +96,6 @@ def load_history_hashes() -> set:
         pass
     return hashes
 
-
 def append_history_record(text: str, tweet_ids: list):
     ensure_dir_for_file(HISTORY_PATH)
     has_website = LAUNCHPAD_WEBSITE.lower() in normalize_text(text)
@@ -96,10 +109,8 @@ def append_history_record(text: str, tweet_ids: list):
     with open(HISTORY_PATH, "a", encoding="utf-8") as f:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
-
 def _today_str() -> str:
     return datetime.now(timezone.utc).date().isoformat()
-
 
 def _load_site_usage() -> dict:
     try:
@@ -108,18 +119,15 @@ def _load_site_usage() -> dict:
     except Exception:
         return {}
 
-
 def should_include_site_today() -> bool:
     usage = _load_site_usage()
     return usage.get("date") != _today_str() or not usage.get("used", False)
-
 
 def mark_site_used_today():
     ensure_dir_for_file(WEBSITE_USAGE_PATH)
     usage = {"date": _today_str(), "used": True}
     with open(WEBSITE_USAGE_PATH, "w", encoding="utf-8") as f:
         json.dump(usage, f)
-
 
 # ===================== Text Generation =====================
 
@@ -130,8 +138,7 @@ def build_viral_prompt(launchpad_name: str, website: str, seed: str, include_sit
         "Hard rules:",
         "- Output ONE tweet only, no preambles or explanations.",
         "- Max 260 characters (leave room for final brand/site append).",
-        f"- Must include '{launchpad_name}' naturally.",
-        "- Strong hook at the start, compelling CTA to follow or check the brand.",
+        "- Strong hook at the start, compelling CTA or engagement.",
         "- 0-3 hashtags max. 0-2 emojis max. No lists, no numbering, no quotes around the tweet.",
     ]
     if include_site:
@@ -140,7 +147,6 @@ def build_viral_prompt(launchpad_name: str, website: str, seed: str, include_sit
         rules.append(f"- Do NOT include any URLs or the domain '{website}'.")
     rules.append("")
     return "\n".join(rules) + f"\nTheme seed: {seed}."
-
 
 def gemini_generate_text(prompt: str) -> str:
     headers = {"Content-Type": "application/json"}
@@ -155,39 +161,36 @@ def gemini_generate_text(prompt: str) -> str:
     data = r.json()
     return data["candidates"][0]["content"]["parts"][0]["text"].strip()
 
-
 def ensure_brand_and_site(text: str, launchpad_name: str, website: str, include_site: bool) -> str:
     t = re.sub(r"\s+", " ", (text or "").strip())
-    lt = t.lower()
 
-    # Ensure brand name appears
-    if launchpad_name.lower() not in lt:
-        candidate = t + f" — {launchpad_name}"
-        t = _trim_to_tweet(candidate, 280)
-        lt = t.lower()
-
-    # Handle website presence based on policy
+    # Only enforce website policy
     if include_site:
-        if website.lower() not in lt:
+        if website.lower() not in t.lower():
             candidate = t + f" — {website}"
             t = _trim_to_tweet(candidate, 280)
     else:
-        # Remove website if model added it
         pattern = re.compile(re.escape(website), flags=re.IGNORECASE)
         t = pattern.sub("", t)
         t = re.sub(r"\s{2,}", " ", t).strip()
 
     return t
 
+def add_crypto_hashtags(text: str, min_tags: int = 3) -> str:
+    hashtags_in_text = [tag for tag in CRYPTO_HASHTAGS if tag.lower() in text.lower()]
+    needed = max(0, min_tags - len(hashtags_in_text))
+    if needed > 0:
+        extra = random.sample(CRYPTO_HASHTAGS, needed)
+        candidate = text + " " + " ".join(extra)
+        text = _trim_to_tweet(candidate, 280)
+    return text
 
 def finalize_tweet(text: str, launchpad_name: str, website: str, include_site: bool) -> str:
-    # Remove surrounding quotes if model added them
     if (text.startswith("\"") and text.endswith("\"")) or (text.startswith("'") and text.endswith("'")):
         text = text[1:-1]
     text = ensure_brand_and_site(text, launchpad_name, website, include_site)
-    # Final trim to 280 chars
+    text = add_crypto_hashtags(text, min_tags=3)
     return _trim_to_tweet(text, 280)
-
 
 def generate_viral_tweet(launchpad_name: str, website: str, history_hashes: set, include_site: bool, max_attempts: int = 8) -> Optional[str]:
     for attempt in range(1, max_attempts + 1):
@@ -211,7 +214,6 @@ def generate_viral_tweet(launchpad_name: str, website: str, history_hashes: set,
             print(f"Attempt {attempt}: duplicate tweet detected, regenerating.")
             continue
 
-        # Basic sanity: tweet length
         if len(text) < 40:
             print(f"Attempt {attempt}: too short after finalization, retrying.")
             continue
@@ -220,7 +222,6 @@ def generate_viral_tweet(launchpad_name: str, website: str, history_hashes: set,
 
     print("Failed to generate unique viral tweet.")
     return None
-
 
 # ======================== Twitter API ========================
 
@@ -231,7 +232,6 @@ def post_tweet(text: str):
     if r.status_code not in (200, 201):
         raise RuntimeError(f"Failed to post tweet: {r.status_code} {r.text}")
     return r.json()
-
 
 # =========================== Main ===========================
 
@@ -278,9 +278,9 @@ def main():
         print(f"Sleeping for {interval_seconds} seconds...")
         time.sleep(interval_seconds)
 
-
 if __name__ == "__main__":
     main()
+
 
 
 
