@@ -39,19 +39,11 @@ TWEET_URL = "https://api.twitter.com/2/tweets"
 
 # Viral prompt seeds: mix of launchpad hype + memes + questions
 PROMPTS = [
-    # Direct launchpad promo
     "short tweet that highlights what wenlambo launchpad offers, like free token creation and registration of tokens created outside the platform, 0.1% fees for creators, weekly airdrops, staking, and many more. Make it very convincing, fun, and full of energy with natural emojis.",
-
     "craft a viral tweet hyping how wenlambo is the launchpad for degens tired of high fees and complex tools. compare it with typical crypto pain points and show how easy it is to mint, trade, and stake instantly. keep it fun and punchy.",
-
-    # General crypto humor
     "make a meme-style crypto tweet comparing the chaos of rugpulls and gas wars to how simple it feels trading on a good launchpad. add crypto slang, humor, and energy. short, fun, natural.",
-
     "write a degen humor tweet about how everyone in crypto is waiting for the next moonshot, but only smart traders find the early gems. keep it fun, sarcastic, and engaging.",
-
-    # Engagement style
     "ask the crypto community: which memecoin is the best right now? which one will actually moon next? make it hype and engaging, encouraging replies. fun degen-style with emojis.",
-
     "create a crypto culture tweet referencing trends like memecoins, staking, and airdrops. make it feel like a community vibe, fun and fast-paced."
 ]
 
@@ -70,6 +62,13 @@ def ensure_dir_for_file(path: str):
 
 def normalize_text(text: str) -> str:
     return re.sub(r"\s+", " ", (text or "").strip()).lower()
+
+def clean_spacing(text: str) -> str:
+    """Fix extra spaces around punctuation and emojis to make it look natural."""
+    text = re.sub(r"\s+([?.!,])", r"\1", text)   # remove space before punctuation
+    text = re.sub(r"([?.!,])([^\s])", r"\1 \2", text)  # ensure space after punctuation
+    text = re.sub(r"\s+", " ", text).strip()     # collapse multiple spaces
+    return text
 
 def text_hash(text: str) -> str:
     return hashlib.sha256(normalize_text(text).encode("utf-8")).hexdigest()
@@ -95,6 +94,29 @@ def load_history_hashes() -> set:
     except FileNotFoundError:
         pass
     return hashes
+
+def recent_word_usage(history_file: str, limit: int = 10) -> set:
+    """Return a set of words used in the last N tweets."""
+    words = set()
+    try:
+        with open(history_file, "r", encoding="utf-8") as f:
+            lines = f.readlines()[-limit:]
+        for line in lines:
+            try:
+                obj = json.loads(line)
+                preview = obj.get("preview", "")
+                words.update(normalize_text(preview).split())
+            except Exception:
+                continue
+    except FileNotFoundError:
+        pass
+    return words
+
+def is_too_similar(text: str, recent_words: set, overlap_limit: int = 6) -> bool:
+    """Check if too many words are reused from recent tweets."""
+    words = set(normalize_text(text).split())
+    overlap = words & recent_words
+    return len(overlap) >= overlap_limit
 
 def append_history_record(text: str, tweet_ids: list):
     ensure_dir_for_file(HISTORY_PATH)
@@ -164,7 +186,6 @@ def gemini_generate_text(prompt: str) -> str:
 def ensure_brand_and_site(text: str, launchpad_name: str, website: str, include_site: bool) -> str:
     t = re.sub(r"\s+", " ", (text or "").strip())
 
-    # Only enforce website policy
     if include_site:
         if website.lower() not in t.lower():
             candidate = t + f" — {website}"
@@ -188,11 +209,21 @@ def add_crypto_hashtags(text: str, min_tags: int = 3) -> str:
 def finalize_tweet(text: str, launchpad_name: str, website: str, include_site: bool) -> str:
     if (text.startswith("\"") and text.endswith("\"")) or (text.startswith("'") and text.endswith("'")):
         text = text[1:-1]
+
     text = ensure_brand_and_site(text, launchpad_name, website, include_site)
+    text = clean_spacing(text)
     text = add_crypto_hashtags(text, min_tags=3)
     return _trim_to_tweet(text, 280)
 
-def generate_viral_tweet(launchpad_name: str, website: str, history_hashes: set, include_site: bool, max_attempts: int = 8) -> Optional[str]:
+def generate_viral_tweet(
+    launchpad_name: str,
+    website: str,
+    history_hashes: set,
+    include_site: bool,
+    max_attempts: int = 10
+) -> Optional[str]:
+    recent_words = recent_word_usage(HISTORY_PATH, limit=10)
+
     for attempt in range(1, max_attempts + 1):
         seed = random.choice(PROMPTS)
         prompt = build_viral_prompt(launchpad_name, website, seed, include_site)
@@ -200,7 +231,7 @@ def generate_viral_tweet(launchpad_name: str, website: str, history_hashes: set,
             text = gemini_generate_text(prompt)
         except Exception as e:
             print("Gemini text generation failed", e)
-            text = None
+            continue
 
         if not text:
             continue
@@ -212,6 +243,10 @@ def generate_viral_tweet(launchpad_name: str, website: str, history_hashes: set,
         h = text_hash(text)
         if h in history_hashes:
             print(f"Attempt {attempt}: duplicate tweet detected, regenerating.")
+            continue
+
+        if is_too_similar(text, recent_words, overlap_limit=6):
+            print(f"Attempt {attempt}: tweet too similar in wording, regenerating.")
             continue
 
         if len(text) < 40:
