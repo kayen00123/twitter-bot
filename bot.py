@@ -45,6 +45,10 @@ PROMPTS = [
     "write a degen humor tweet about how everyone in crypto is waiting for the next moonshot, but only smart traders find the early gems. keep it fun, sarcastic, and engaging.",
     "ask the crypto community: which memecoin is the best right now? which one will actually moon next? make it hype and engaging, encouraging replies. fun degen-style with emojis.",
     "create a crypto culture tweet referencing trends like memecoins, staking, and airdrops. make it feel like a community vibe, fun and fast-paced."
+    “Write a hype crypto tweet about a launchpad that gives free token creation, 0.1% swap royalties for creators, weekly airdrops, 5% supply to users, staking rewards & whale protection. Make it fun, human, with emojis and spacing.”
+    “Make a meme-style tweet comparing other launchpads that charge fees vs ours that pays users and creators. Add emojis, spacing, and degen slang. It should sound like a human shill, not a robot.”
+    “Create a short viral tweet  that highlights how our launchpad is fair, rewarding, and safe from whales . Use hype energy, emojis, and spacing to sound like a community-driven crypto post.”
+    “Write a playful crypto tweet  that flexes how users on our launchpad get airdrops every week + 5% supply at launch  . Make it funny, human-like, with emojis and casual tone.”
 ]
 
 # Default crypto hashtags pool
