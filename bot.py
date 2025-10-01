@@ -164,7 +164,6 @@ Checkmark and rocket emojis.
 Use SPACING to create urgency and importance."""
 ]
 
-
 # Default crypto hashtags pool
 CRYPTO_HASHTAGS = [
     "#crypto", "#bnb", "#ethereum", "#bitcoin", "#memecoin",
@@ -273,7 +272,7 @@ def build_viral_prompt(launchpad_name: str, website: str, seed: str, include_sit
         "- Output ONE tweet only, no preambles or explanations.",
         "- Max 260 characters (leave room for final brand/site append).",
         "- Strong hook at the start, compelling CTA or engagement.",
-        "- 0-3 hashtags max. 0-2 emojis max. No lists, no numbering, no quotes around the tweet.",
+        "- Use CLEAR LINE BREAKS and SPACING as described in the theme seed.",
     ]
     if include_site:
         rules.append(f"- Include '{website}' exactly once.")
@@ -316,13 +315,27 @@ def add_crypto_hashtags(text: str, min_tags: int = 3) -> str:
         text = _trim_to_tweet(text + " " + " ".join(extra), 280)
     return text
 
+def format_for_twitter(text: str) -> str:
+    """
+    Ensure proper spacing + line breaks show on Twitter.
+    Converts single \n into double line breaks.
+    """
+    if not text:
+        return ""
+    formatted = text.strip()
+    formatted = formatted.replace("\r\n", "\n")   # normalize
+    formatted = formatted.replace("\n", "\n\n")   # force double spacing
+    return formatted
+
 def finalize_tweet(text: str, launchpad_name: str, website: str, include_site: bool) -> str:
     if (text.startswith("\"") and text.endswith("\"")) or (text.startswith("'") and text.endswith("'")):
         text = text[1:-1]
     text = ensure_brand_and_site(text, launchpad_name, website, include_site)
     text = clean_spacing(text)
     text = add_crypto_hashtags(text, min_tags=3)
-    return _trim_to_tweet(text, 280)
+    text = _trim_to_tweet(text, 280)
+    text = format_for_twitter(text)  # ✅ format spacing for Twitter
+    return text
 
 def generate_viral_tweet(launchpad_name: str, website: str, history_hashes: set, include_site: bool, max_attempts: int = 10) -> Optional[str]:
     for attempt in range(1, max_attempts + 1):
