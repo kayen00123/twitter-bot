@@ -40,17 +40,130 @@ TWEET_URL = "https://api.twitter.com/2/tweets"
 
 # Viral prompt seeds
 PROMPTS = [
-    "short tweet that highlights what wenlambo launchpad offers, like free token creation and registration of tokens created outside the platform, 0.1% fees for creators, weekly airdrops, staking, and many more. Make it very convincing, fun, and full of energy with natural emojis.",
-    "craft a viral tweet hyping how wenlambo is the launchpad for degens tired of high fees and complex tools. compare it with typical crypto pain points and show how easy it is to mint, trade, and stake instantly. keep it fun and punchy.",
-    "make a meme-style crypto tweet comparing the chaos of rugpulls and gas wars to how simple it feels trading on a good launchpad. add crypto slang, humor, and energy. short, fun, natural.",
-    "write a degen humor tweet about how everyone in crypto is waiting for the next moonshot, but only smart traders find the early gems. keep it fun, sarcastic, and engaging.",
-    "ask the crypto community: which memecoin is the best right now? which one will actually moon next? make it hype and engaging, encouraging replies. fun degen-style with emojis.",
-    "create a crypto culture tweet referencing trends like memecoins, staking, and airdrops. make it feel like a community vibe, fun and fast-paced.",
-    "write a hype crypto tweet about a launchpad that gives free token creation, 0.1% swap royalties for creators, weekly airdrops, 5% supply to users, staking rewards & whale protection. Make it fun, human, with emojis and spacing.",
-    "make a meme-style tweet comparing other launchpads that charge fees vs ours that pays users and creators. Add emojis, spacing, and degen slang. It should sound like a human shill, not a robot.",
-    "create a short viral tweet that highlights how our launchpad is fair, rewarding, and safe from whales. Use hype energy, emojis, and spacing to sound like a community-driven crypto post.",
-    "write a playful crypto tweet that flexes how users on our launchpad get airdrops every week + 5% supply at launch. Make it funny, human-like, with emojis and casual tone."
+    """Short & Energetic Intro:
+Write a short, hype tweet introducing Wenlambo.
+Use CLEAR LINE BREAKS and SPACING between ideas.
+Highlight:
+🆓 FREE token creation
+🔗 Register ANY token
+💸 0.1% creator fees on every swap
+🎁 Weekly airdrops
+⚡ Staking rewards
+Sound like a friend sharing a secret. Use natural emojis and PROPER SPACING for readability.""",
+
+    """Degen-Focused Solution:
+Craft a viral tweet for degens tired of crypto problems.
+Use LINE BREAKS to separate points.
+Contrast:
+❌ High fees & complex tools
+✅ Wenlambo's easy mint, trade, stake
+Use punchy lines, crypto slang, and emojis.
+Add SPACING between sections to make it scannable.
+Sound like a real person celebrating an easy win.""",
+
+    """Meme-Style Chaos vs. Simplicity:
+Create a meme-style tweet comparing:
+🔥 Chaos of rug pulls & gas wars
+😎 Smooth Wenlambo experience
+Use LINE BREAKS between the 'before' and 'after'.
+Add crypto slang ('GM', 'ser', 'no cap') and funny emojis.
+Keep it short with GOOD SPACING - like a meme you'd send to a friend.""",
+
+    """Sarcastic Degen Humor:
+Write a sarcastic tweet about moonshot hunting.
+Use LINE BREAKS to create comedic timing.
+Theme: Everyone 'waiting' vs smart degens finding gems.
+Playful, cocky tone with well-placed emojis.
+Use SPACING to make the punchline hit harder.""",
+
+    """Engaging Community Poll:
+Write an engaging poll-style tweet.
+Use SPACING to make it easy to read and reply to.
+Ask: Which memecoin is best? Which moons next?
+Encourage replies with LINE BREAKS between questions.
+Fun, degen-style with emojis. Sound like starting a TG debate.""",
+
+    """Crypto Culture Vibes:
+Create a fast-paced crypto culture tweet.
+Use LINE BREAKS between different trends:
+- Memecoins
+- Staking
+- Airdrops
+Community-driven vibe with high energy.
+Add emojis and SPACING to keep it readable at high speed.""",
+
+    """Feature Hype Tweet:
+Write a hype tweet listing Wenlambo features.
+Use CLEAR LINE BREAKS between each benefit:
+🆓 Free token creation
+💸 0.1% swap royalties
+🎁 Weekly airdrops
+🎯 5% supply to users
+⚡ Staking rewards
+🐳 Whale protection
+Sound like an exclusive offer from a friend. Use emojis and PROPER SPACING.""",
+
+    """Competitive Meme-Style:
+Create a meme-style tweet roasting competitors.
+Use LINE BREAKS to contrast:
+❌ Other launchpads charge fees
+✅ Wenlambo PAYS users & creators
+Degen slang, emojis, conversational tone.
+Add SPACING between the 'L' and 'W' for maximum impact.""",
+
+    """Fair & Safe Launchpad:
+Write a short viral tweet about Wenlambo's fairness.
+Use LINE BREAKS to emphasize key points:
+✅ Fair
+✅ Rewarding
+✅ Whale-safe
+High energy, emojis, GOOD SPACING.
+Sound like a passionate community member.""",
+
+    """Playful Airdrop Flex:
+Craft a playful tweet flexing Wenlambo benefits.
+Use LINE BREAKS between the bragging points:
+🎁 Weekly airdrops
+➕ 5% supply at launch
+Funny, human brag with emojis.
+Use SPACING to make the flex more dramatic.""",
+
+    """Real Creator Success Story:
+Write a hype tweet about a creator making $13k in 4 days.
+Use LINE BREAKS to build excitement:
+💰 $13,000 in 4 days
+🚀 This could be YOU
+Money bag and rocket emojis.
+Sound like breaking news with PROPER SPACING between facts.""",
+
+    """Community Earnings Flex:
+Craft a tweet bragging about community earnings.
+Use LINE BREAKS to highlight the numbers:
+🎯 $37,000+ earned
+🤝 Giveaways & royalties
+💪 Trading & sharing
+'We're winning together' vibe with community emojis.
+Use SPACING to make the numbers stand out.""",
+
+    """Massive Pump Statistics:
+Write a viral tweet sharing insane stats.
+Use LINE BREAKS for each mind-blowing number:
+📈 17,000% pumps
+💸 $3 → $72 profits
+🤯 Average gains
+Mind-blown and rocket emojis.
+Use SPACING to let each stat sink in.""",
+
+    """First-Mover Advantage Call:
+Create a powerful 'you're early' tweet.
+Use LINE BREAKS to build the argument:
+🎯 First revenue-generating launchpad
+⏰ Still early
+🚀 Creators & traders win
+Checkmark and rocket emojis.
+Use SPACING to create urgency and importance."""
 ]
+
 
 # Default crypto hashtags pool
 CRYPTO_HASHTAGS = [
