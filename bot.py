@@ -38,7 +38,7 @@ TWEET_URL = "https://api.twitter.com/2/tweets"
 
 # ==========================================================
 
-# Viral prompt seeds
+# Viral prompt seeds (same as before, left intact)
 PROMPTS = [
     """Short & Energetic Intro:
 Write a short, hype tweet introducing Wenlambo.
@@ -50,7 +50,6 @@ Highlight:
 🎁 Weekly airdrops
 ⚡ Staking rewards
 Sound like a friend sharing a secret. Use natural emojis and PROPER SPACING for readability.""",
-
     """Degen-Focused Solution:
 Craft a viral tweet for degens tired of crypto problems.
 Use LINE BREAKS to separate points.
@@ -60,7 +59,6 @@ Contrast:
 Use punchy lines, crypto slang, and emojis.
 Add SPACING between sections to make it scannable.
 Sound like a real person celebrating an easy win.""",
-
     """Meme-Style Chaos vs. Simplicity:
 Create a meme-style tweet comparing:
 🔥 Chaos of rug pulls & gas wars
@@ -68,21 +66,18 @@ Create a meme-style tweet comparing:
 Use LINE BREAKS between the 'before' and 'after'.
 Add crypto slang ('GM', 'ser', 'no cap') and funny emojis.
 Keep it short with GOOD SPACING - like a meme you'd send to a friend.""",
-
     """Sarcastic Degen Humor:
 Write a sarcastic tweet about moonshot hunting.
 Use LINE BREAKS to create comedic timing.
 Theme: Everyone 'waiting' vs smart degens finding gems.
 Playful, cocky tone with well-placed emojis.
 Use SPACING to make the punchline hit harder.""",
-
     """Engaging Community Poll:
 Write an engaging poll-style tweet.
 Use SPACING to make it easy to read and reply to.
 Ask: Which memecoin is best? Which moons next?
 Encourage replies with LINE BREAKS between questions.
 Fun, degen-style with emojis. Sound like starting a TG debate.""",
-
     """Crypto Culture Vibes:
 Create a fast-paced crypto culture tweet.
 Use LINE BREAKS between different trends:
@@ -91,7 +86,6 @@ Use LINE BREAKS between different trends:
 - Airdrops
 Community-driven vibe with high energy.
 Add emojis and SPACING to keep it readable at high speed.""",
-
     """Feature Hype Tweet:
 Write a hype tweet listing Wenlambo features.
 Use CLEAR LINE BREAKS between each benefit:
@@ -102,7 +96,6 @@ Use CLEAR LINE BREAKS between each benefit:
 ⚡ Staking rewards
 🐳 Whale protection
 Sound like an exclusive offer from a friend. Use emojis and PROPER SPACING.""",
-
     """Competitive Meme-Style:
 Create a meme-style tweet roasting competitors.
 Use LINE BREAKS to contrast:
@@ -110,7 +103,6 @@ Use LINE BREAKS to contrast:
 ✅ Wenlambo PAYS users & creators
 Degen slang, emojis, conversational tone.
 Add SPACING between the 'L' and 'W' for maximum impact.""",
-
     """Fair & Safe Launchpad:
 Write a short viral tweet about Wenlambo's fairness.
 Use LINE BREAKS to emphasize key points:
@@ -119,7 +111,6 @@ Use LINE BREAKS to emphasize key points:
 ✅ Whale-safe
 High energy, emojis, GOOD SPACING.
 Sound like a passionate community member.""",
-
     """Playful Airdrop Flex:
 Craft a playful tweet flexing Wenlambo benefits.
 Use LINE BREAKS between the bragging points:
@@ -127,7 +118,6 @@ Use LINE BREAKS between the bragging points:
 ➕ 5% supply at launch
 Funny, human brag with emojis.
 Use SPACING to make the flex more dramatic.""",
-
     """Real Creator Success Story:
 Write a hype tweet about a creator making $13k in 4 days.
 Use LINE BREAKS to build excitement:
@@ -135,7 +125,6 @@ Use LINE BREAKS to build excitement:
 🚀 This could be YOU
 Money bag and rocket emojis.
 Sound like breaking news with PROPER SPACING between facts.""",
-
     """Community Earnings Flex:
 Craft a tweet bragging about community earnings.
 Use LINE BREAKS to highlight the numbers:
@@ -144,7 +133,6 @@ Use LINE BREAKS to highlight the numbers:
 💪 Trading & sharing
 'We're winning together' vibe with community emojis.
 Use SPACING to make the numbers stand out.""",
-
     """Massive Pump Statistics:
 Write a viral tweet sharing insane stats.
 Use LINE BREAKS for each mind-blowing number:
@@ -153,7 +141,6 @@ Use LINE BREAKS for each mind-blowing number:
 🤯 Average gains
 Mind-blown and rocket emojis.
 Use SPACING to let each stat sink in.""",
-
     """First-Mover Advantage Call:
 Create a powerful 'you're early' tweet.
 Use LINE BREAKS to build the argument:
@@ -180,10 +167,11 @@ def ensure_dir_for_file(path: str):
 def normalize_text(text: str) -> str:
     return re.sub(r"\s+", " ", (text or "").strip()).lower()
 
+# ✅ FIXED: Preserve newlines, only clean spaces
 def clean_spacing(text: str) -> str:
-    text = re.sub(r"\s+([?.!,])", r"\1", text)
+    text = re.sub(r"[ \t]+([?.!,])", r"\1", text)
     text = re.sub(r"([?.!,])([^\s])", r"\1 \2", text)
-    text = re.sub(r"\s+", " ", text).strip()
+    text = re.sub(r"[ \t]+", " ", text).strip()
     return text
 
 def text_hash(text: str) -> str:
@@ -271,8 +259,9 @@ def build_viral_prompt(launchpad_name: str, website: str, seed: str, include_sit
         "Hard rules:",
         "- Output ONE tweet only, no preambles or explanations.",
         "- Max 260 characters (leave room for final brand/site append).",
+        "- Use LINE BREAKS (\\n) and SPACING exactly as instructed in the seed.",
         "- Strong hook at the start, compelling CTA or engagement.",
-        "- Use CLEAR LINE BREAKS and SPACING as described in the theme seed.",
+        "- 0-3 hashtags max. No quotes around the tweet.",
     ]
     if include_site:
         rules.append(f"- Include '{website}' exactly once.")
@@ -295,13 +284,20 @@ def deepseek_generate_text(prompt: str) -> str:
     r = requests.post(DEEPSEEK_URL, headers=headers, json=payload, timeout=60)
     r.raise_for_status()
     data = r.json()
-    return data["choices"][0]["message"]["content"].strip()
+    text = data["choices"][0]["message"]["content"].strip()
+
+    # ✅ Debug raw DeepSeek output
+    print("\n==== RAW DEEPSEEK OUTPUT ====\n")
+    print(repr(text))
+    print("\n=============================\n")
+
+    return text
 
 def ensure_brand_and_site(text: str, launchpad_name: str, website: str, include_site: bool) -> str:
-    t = re.sub(r"\s+", " ", (text or "").strip())
+    t = text.strip()
     if include_site:
         if website.lower() not in t.lower():
-            t = _trim_to_tweet(t + f" — {website}", 280)
+            t = _trim_to_tweet(t + f"\n\n{website}", 280)
     else:
         t = re.sub(re.escape(website), "", t, flags=re.IGNORECASE)
         t = re.sub(r"\s{2,}", " ", t).strip()
@@ -315,27 +311,13 @@ def add_crypto_hashtags(text: str, min_tags: int = 3) -> str:
         text = _trim_to_tweet(text + " " + " ".join(extra), 280)
     return text
 
-def format_for_twitter(text: str) -> str:
-    """
-    Ensure proper spacing + line breaks show on Twitter.
-    Converts single \n into double line breaks.
-    """
-    if not text:
-        return ""
-    formatted = text.strip()
-    formatted = formatted.replace("\r\n", "\n")   # normalize
-    formatted = formatted.replace("\n", "\n\n")   # force double spacing
-    return formatted
-
 def finalize_tweet(text: str, launchpad_name: str, website: str, include_site: bool) -> str:
     if (text.startswith("\"") and text.endswith("\"")) or (text.startswith("'") and text.endswith("'")):
         text = text[1:-1]
     text = ensure_brand_and_site(text, launchpad_name, website, include_site)
     text = clean_spacing(text)
     text = add_crypto_hashtags(text, min_tags=3)
-    text = _trim_to_tweet(text, 280)
-    text = format_for_twitter(text)  # ✅ format spacing for Twitter
-    return text
+    return _trim_to_tweet(text, 280)
 
 def generate_viral_tweet(launchpad_name: str, website: str, history_hashes: set, include_site: bool, max_attempts: int = 10) -> Optional[str]:
     for attempt in range(1, max_attempts + 1):
@@ -349,6 +331,12 @@ def generate_viral_tweet(launchpad_name: str, website: str, history_hashes: set,
         if not text:
             continue
         text = finalize_tweet(text, launchpad_name, website, include_site)
+
+        # ✅ Debug final tweet
+        print("\n==== FINAL TWEET TO POST ====\n")
+        print(repr(text))
+        print("\n=============================\n")
+
         if not text:
             continue
         h = text_hash(text)
@@ -390,7 +378,7 @@ def main():
                 print("Skipping this cycle due to generation constraints.")
                 time.sleep(interval_seconds)
                 continue
-            print(f"Posting viral tweet (len={len(text)}, include_site={include_site}):", text)
+            print(f"Posting viral tweet (len={len(text)}, include_site={include_site}):\n{text}")
             try:
                 resp = post_tweet(text)
                 tweet_id = resp.get("data", {}).get("id")
@@ -413,6 +401,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
