@@ -26,7 +26,7 @@ DEEPSEEK_URL = "https://api.deepseek.com/chat/completions"
 POST_EVERY_HOURS = int(os.getenv("POST_EVERY_HOURS", 3))  # tweet every 3 hours
 LAUNCHPAD_NAME = os.getenv("LAUNCHPAD_NAME", "wenlambo")
 
-# Persistence for deduplication and website usage
+# Persistence
 DATA_DIR = os.getenv("DATA_DIR", "data")
 HISTORY_PATH = os.getenv("HISTORY_PATH", os.path.join(DATA_DIR, "posted_history.jsonl"))
 PROMPT_INDEX_PATH = os.getenv("PROMPT_INDEX_PATH", os.path.join(DATA_DIR, "prompt_index.json"))
@@ -36,7 +36,6 @@ TWEET_URL = "https://api.twitter.com/2/tweets"
 
 # ==========================================================
 
-# Viral prompt seeds
 PROMPTS = [
     """Short & Energetic Intro:
 Write a short, hype tweet introducing Wenlambo.
@@ -48,7 +47,6 @@ Highlight:
 🎁 Weekly airdrops
 ⚡ Staking rewards
 Sound like a friend sharing a secret. Use natural emojis and PROPER SPACING for readability.""",
-
     """Degen-Focused Solution:
 Craft a viral tweet for degens tired of crypto problems.
 Use REAL LINE BREAKS to separate points.
@@ -58,7 +56,6 @@ Contrast:
 Use punchy lines, crypto slang, and emojis.
 Add SPACING between sections to make it scannable.
 Sound like a real person celebrating an easy win.""",
-
     """Meme-Style Chaos vs. Simplicity:
 Create a meme-style tweet comparing:
 🔥 Chaos of rug pulls & gas wars
@@ -66,21 +63,18 @@ Create a meme-style tweet comparing:
 Use REAL LINE BREAKS between the 'before' and 'after'.
 Add crypto slang ('GM', 'ser', 'no cap') and funny emojis.
 Keep it short with GOOD SPACING - like a meme you'd send to a friend.""",
-
     """Sarcastic Degen Humor:
 Write a sarcastic tweet about moonshot hunting.
 Use REAL LINE BREAKS to create comedic timing.
 Theme: Everyone 'waiting' vs smart degens finding gems.
 Playful, cocky tone with well-placed emojis.
 Use SPACING to make the punchline hit harder.""",
-
     """Engaging Community Poll:
 Write an engaging poll-style tweet.
 Use REAL LINE BREAKS to make it easy to read and reply to.
 Ask: Which memecoin is best? Which moons next?
 Encourage replies with LINE BREAKS between questions.
 Fun, degen-style with emojis. Sound like starting a TG debate.""",
-
     """Crypto Culture Vibes:
 Create a fast-paced crypto culture tweet.
 Use REAL LINE BREAKS between different trends:
@@ -89,7 +83,6 @@ Use REAL LINE BREAKS between different trends:
 - Airdrops
 Community-driven vibe with high energy.
 Add emojis and SPACING to keep it readable at high speed.""",
-
     """Feature Hype Tweet:
 Write a hype tweet listing Wenlambo features.
 Use REAL LINE BREAKS between each benefit:
@@ -100,7 +93,6 @@ Use REAL LINE BREAKS between each benefit:
 ⚡ Staking rewards
 🐳 Whale protection
 Sound like an exclusive offer from a friend. Use emojis and PROPER SPACING.""",
-
     """Competitive Meme-Style:
 Create a meme-style tweet roasting competitors.
 Use REAL LINE BREAKS to contrast:
@@ -108,7 +100,6 @@ Use REAL LINE BREAKS to contrast:
 ✅ Wenlambo PAYS users & creators
 Degen slang, emojis, conversational tone.
 Add SPACING between the 'L' and 'W' for maximum impact.""",
-
     """Fair & Safe Launchpad:
 Write a short viral tweet about Wenlambo's fairness.
 Use REAL LINE BREAKS to emphasize key points:
@@ -117,7 +108,6 @@ Use REAL LINE BREAKS to emphasize key points:
 ✅ Whale-safe
 High energy, emojis, GOOD SPACING.
 Sound like a passionate community member.""",
-
     """Playful Airdrop Flex:
 Craft a playful tweet flexing Wenlambo benefits.
 Use REAL LINE BREAKS between the bragging points:
@@ -125,7 +115,6 @@ Use REAL LINE BREAKS between the bragging points:
 ➕ 5% supply at launch
 Funny, human brag with emojis.
 Use SPACING to make the flex more dramatic.""",
-
     """Real Creator Success Story:
 Write a hype tweet about a creator making $13k in 4 days.
 Use REAL LINE BREAKS to build excitement:
@@ -133,7 +122,6 @@ Use REAL LINE BREAKS to build excitement:
 🚀 This could be YOU
 Money bag and rocket emojis.
 Sound like breaking news with PROPER SPACING between facts.""",
-
     """Community Earnings Flex:
 Craft a tweet bragging about community earnings.
 Use REAL LINE BREAKS to highlight the numbers:
@@ -142,7 +130,6 @@ Use REAL LINE BREAKS to highlight the numbers:
 💪 Trading & sharing
 'We're winning together' vibe with community emojis.
 Use SPACING to make the numbers stand out.""",
-
     """Massive Pump Statistics:
 Write a viral tweet sharing insane stats.
 Use REAL LINE BREAKS for each mind-blowing number:
@@ -151,7 +138,6 @@ Use REAL LINE BREAKS for each mind-blowing number:
 🤯 Average gains
 Mind-blown and rocket emojis.
 Use SPACING to let each stat sink in.""",
-
     """First-Mover Advantage Call:
 Create a powerful 'you're early' tweet.
 Use REAL LINE BREAKS to build the argument:
@@ -162,7 +148,6 @@ Checkmark and rocket emojis.
 Use SPACING to create urgency and importance."""
 ]
 
-# Default crypto hashtags pool
 CRYPTO_HASHTAGS = [
     "#crypto", "#bnb", "#ethereum", "#bitcoin", "#memecoin",
     "#blockchain", "#web3", "#trading", "#altcoins", "#defi"
@@ -179,7 +164,6 @@ def normalize_text(text: str) -> str:
     return re.sub(r"\s+", " ", (text or "").strip()).lower()
 
 def clean_spacing(text: str) -> str:
-    # preserve real line breaks, clean spaces inside each line
     lines = [re.sub(r"\s+", " ", l).strip() for l in text.split("\n")]
     return "\n".join([l for l in lines if l])
 
@@ -188,21 +172,16 @@ def text_hash(text: str) -> str:
 
 def _trim_to_tweet(text: str, limit: int = 280) -> str:
     text = (text or "").strip()
-    if len(text) <= limit:
-        return text
-    return text[: limit - 1].rstrip() + "…"
+    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
 
 def load_history_hashes() -> set:
     hashes = set()
     try:
         with open(HISTORY_PATH, "r", encoding="utf-8") as f:
             for line in f:
-                try:
-                    obj = json.loads(line)
-                    if "hash" in obj:
-                        hashes.add(obj["hash"])
-                except Exception:
-                    pass
+                obj = json.loads(line)
+                if "hash" in obj:
+                    hashes.add(obj["hash"])
     except FileNotFoundError:
         pass
     return hashes
@@ -242,21 +221,16 @@ def next_prompt() -> str:
 
 def build_viral_prompt(launchpad_name: str, seed: str) -> str:
     rules = [
-        "You are crafting a SINGLE viral-style crypto tweet. It must be punchy, humorous or mildly controversial, and persuasive.",
+        "You are crafting a SINGLE viral-style crypto tweet.",
         "- Use REAL line breaks, not literal \\n.",
         "- Output ONE tweet only, no preambles or explanations.",
         "- Max 260 characters.",
-        "- Strong hook at the start, compelling CTA or engagement.",
-        "- 0-3 hashtags max. 0-2 emojis max. No lists, no numbering, no quotes around the tweet.",
+        "- Strong hook at the start.",
     ]
-    rules.append("")
     return "\n".join(rules) + f"\nTheme seed: {seed}."
 
 def deepseek_generate_text(prompt: str) -> str:
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
-    }
+    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {DEEPSEEK_API_KEY}"}
     payload = {
         "model": DEEPSEEK_MODEL,
         "messages": [{"role": "user", "content": prompt}],
@@ -267,22 +241,12 @@ def deepseek_generate_text(prompt: str) -> str:
     r.raise_for_status()
     data = r.json()
     text = data["choices"][0]["message"]["content"].strip()
-
-    # ✅ Convert escaped newlines into real line breaks
-    text = text.replace("\\n", "\n")
-
-    print("\n==== RAW DEEPSEEK OUTPUT ====\n")
-    print(repr(text))
-    print("\n=============================\n")
-
-    return text
+    return text.replace("\\n", "\n")
 
 def ensure_brand(text: str, launchpad_name: str) -> str:
-    t = text.strip()
-    if launchpad_name.lower() not in t.lower():
-        if random.random() < 0.4:  # 40% chance to append
-            t = _trim_to_tweet(t + f"\n\n{launchpad_name}", 280)
-    return t
+    if launchpad_name.lower() not in text.lower() and random.random() < 0.3:
+        text = _trim_to_tweet(text + f"\n\n{launchpad_name}", 280)
+    return text
 
 def add_crypto_hashtags(text: str, min_tags: int = 3) -> str:
     hashtags_in_text = [tag for tag in CRYPTO_HASHTAGS if tag.lower() in text.lower()]
@@ -295,11 +259,9 @@ def add_crypto_hashtags(text: str, min_tags: int = 3) -> str:
 def finalize_tweet(text: str, launchpad_name: str) -> str:
     if (text.startswith("\"") and text.endswith("\"")) or (text.startswith("'") and text.endswith("'")):
         text = text[1:-1]
-
     text = ensure_brand(text, launchpad_name)
     text = clean_spacing(text)
     text = add_crypto_hashtags(text, min_tags=3)
-
     return _trim_to_tweet(text, 280)
 
 def generate_viral_tweet(launchpad_name: str, history_hashes: set, max_attempts: int = 10) -> Optional[str]:
@@ -318,13 +280,12 @@ def generate_viral_tweet(launchpad_name: str, history_hashes: set, max_attempts:
             continue
         h = text_hash(text)
         if h in history_hashes:
-            print(f"Attempt {attempt}: duplicate tweet detected, regenerating.")
+            print(f"Attempt {attempt}: duplicate tweet detected.")
             continue
         if len(text) < 40:
-            print(f"Attempt {attempt}: too short after finalization, retrying.")
+            print(f"Attempt {attempt}: too short.")
             continue
         return text
-    print("Failed to generate unique viral tweet.")
     return None
 
 # ======================== Twitter API ========================
@@ -340,37 +301,37 @@ def post_tweet(text: str):
 
 def main():
     if not all([API_KEY, API_SECRET, ACCESS_TOKEN, ACCESS_TOKEN_SECRET]):
-        raise RuntimeError("Twitter API credentials are not fully set in environment variables.")
+        raise RuntimeError("Twitter API credentials are missing.")
     if not DEEPSEEK_API_KEY:
-        raise RuntimeError("DEEPSEEK_API_KEY must be set for text generation.")
+        raise RuntimeError("DEEPSEEK_API_KEY missing.")
 
     interval_seconds = max(60, POST_EVERY_HOURS * 3600)
     history_hashes = load_history_hashes()
 
     while True:
+        now = datetime.now()
+        if now.hour < 8 or now.hour >= 24:  # No tweets from 12AM–8AM
+            print("Sleeping until 8 AM...")
+            time.sleep(60 * 30)  # check every 30 min
+            continue
+
         try:
             text = generate_viral_tweet(LAUNCHPAD_NAME, history_hashes)
             if not text:
-                print("Skipping this cycle due to generation constraints.")
+                print("No unique tweet generated.")
                 time.sleep(interval_seconds)
                 continue
-            print(f"Posting viral tweet (len={len(text)}):", text)
-            try:
-                resp = post_tweet(text)
-                tweet_id = resp.get("data", {}).get("id")
-                if not tweet_id:
-                    raise RuntimeError(f"No tweet id in response: {resp}")
+            print(f"Posting tweet (len={len(text)}):", text)
+            resp = post_tweet(text)
+            tweet_id = resp.get("data", {}).get("id")
+            if tweet_id:
                 append_history_record(text, [tweet_id])
                 history_hashes.add(text_hash(text))
-                print("Tweet posted. Tweet id:", tweet_id)
-            except Exception as e:
-                if " 429 " in str(e):
-                    print("Rate limited (429). Retrying next cycle.")
-                else:
-                    print("Failed to post:", e)
+                print("Tweet posted. ID:", tweet_id)
         except Exception as e:
-            print("Error during posting loop:", e)
-        print(f"Sleeping for {interval_seconds} seconds...")
+            print("Error:", e)
+
+        print(f"Sleeping {interval_seconds} sec...")
         time.sleep(interval_seconds)
 
 if __name__ == "__main__":
